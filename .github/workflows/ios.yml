@@ -1,0 +1,59 @@
+name: iOS builds
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build for iOS arm64
+    runs-on: macos-26
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: 1
+      HOMEBREW_NO_INSTALL_CLEANUP: 1
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+
+      - name: Install the toolchain and libraries
+        run: |
+          brew install cmake ninja glslang molten-vk
+          rustup toolchain install stable --profile minimal
+          rustup target add aarch64-apple-ios
+          cargo install cxxbridge-cmd --version 1.0.205 --locked
+
+      # SDL3 is required by kazarov and is not shipped as an iOS framework by Homebrew,
+      # so cross-compile it for iOS arm64 into a local prefix the CMake configure can find.
+      - name: Build SDL3 for iOS arm64
+        run: |
+          curl -L https://github.com/libsdl-org/SDL/archive/refs/tags/release-3.4.0.tar.gz \
+            | tar xz -C "$RUNNER_TEMP"
+          cmake -S "$RUNNER_TEMP/SDL-release-3.4.0" -B "$RUNNER_TEMP/sdl-ios-build" \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/sdl-ios" \
+            -DSDL_STATIC=ON \
+            -DSDL_SHARED=OFF \
+            -DSDL_TESTS=OFF \
+            -DSDL_EXAMPLES=OFF
+          cmake --build "$RUNNER_TEMP/sdl-ios-build" --config Release -j"$(sysctl -n hw.ncpu)"
+          cmake --install "$RUNNER_TEMP/sdl-ios-build" --config Release
+          echo "SDL3_PREFIX=$RUNNER_TEMP/sdl-ios" >> "$GITHUB_ENV"
+
+      - name: Configure for iOS
+        run: |
+          cmake --preset ios-arm64 \
+            -DCMAKE_PREFIX_PATH="$SDL3_PREFIX" \
+            -DCT_TEST_TIMEOUT=60
+
+      - name: Build for iOS
+        run: cmake --build port/build/ios-arm64 -j"$(sysctl -n hw.ncpu)"
