@@ -17,7 +17,7 @@ TEST(MenuIconModes, RgbaSheetsCreateIndependentModesWithoutPalettes) {
     memory.stSetBuffer(arena.data(), static_cast<int>(arena.size()));
     mgTexManager.SetTableBuffer(16, 4, &memory);
     mgTexManager.Initialize(0x1000, -1);
-    CMenuPosDataManage menu;
+    CMenuPosDataManage       menu{};
     std::array<u_long128, 1> pixels{};
     const u8 rgba[] = {48, 96, 144, 255, 0, 0, 0, 0, 255, 255, 255, 128, 0, 0, 0, 255};
     std::memcpy(pixels.data(), rgba, sizeof rgba);
@@ -88,6 +88,8 @@ TEST(MenuIconModes, RgbaSheetsCreateIndependentModesWithoutPalettes) {
     MenuCharaChangeBase_Tex = MenuCharaChangeCLUT_Tex = nullptr;
     menu.item_icon_tex[0][1] = nullptr;
     menu.MallocPallet(&memory);
-    for (int mode = 1; mode < 4; ++mode) EXPECT_EQ(menu.item_icon_tex[mode][1], nullptr);
+    for (int mode = 1; mode < 4; ++mode) {
+        EXPECT_EQ(menu.item_icon_tex[mode][1], nullptr);
+    }
     mgTexManager.Initialize(0x1000, -1);
 }

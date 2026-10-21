@@ -55,7 +55,7 @@ protected:
         ClockSetTickRate(60.0);
     }
 
-    audio::StreamChannel &channel() { return EzBgmChannel(1); }
+    static audio::StreamChannel &channel() { return EzBgmChannel(1); }
 
     dc::test::EnvSnapshot audio_env_;
     dc::test::EnvSnapshot wav_env_;

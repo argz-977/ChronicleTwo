@@ -25,7 +25,8 @@ TEST(CameraFixedMouse, BoundsDecayAndDisplayRateIndependence) {
     look.Update(true, 1, 100, -100, 0);
     EXPECT_NEAR(look.yaw, 15 * std::numbers::pi_v<float> / 180, 1e-6f);
     EXPECT_NEAR(look.pitch, -10 * std::numbers::pi_v<float> / 180, 1e-6f);
-    auto fast = look, slow = look;
+    auto fast = look;
+    auto slow = look;
     for (int frame = 0; frame < 144; ++frame) {
         fast.Update(true, 1, 100, -100, 1.0 / 144);
     }
@@ -106,7 +107,8 @@ TEST(CameraFixedMouse, OptionDefaultsOnAndRoundTripsThroughItsSettingsRow) {
 }
 
 TEST(CameraFixedMouse, DisplayRotationKeepsEyePositionGameplayListUiAndOtherViewsUnchanged) {
-    gfx::DisplayList  source, turned;
+    gfx::DisplayList  source;
+    gfx::DisplayList  turned;
     auto              identity = gfx::IdentityMeshTransform();
     gfx::detail::Mat4 view;
     std::copy_n(identity.view, 16, view.data());
@@ -126,14 +128,19 @@ TEST(CameraFixedMouse, DisplayRotationKeepsEyePositionGameplayListUiAndOtherView
     gfx::detail::MeshEntry mesh{};
     mesh.record = 0;
     mesh.prog0 = 0;
-    source.entries.push_back(mesh);
+    mesh.palette = 0;
+    source.entries.emplace_back(mesh);
     gfx::Prog0Constants block;
-    std::copy(view.begin(), view.end(), block.clip_or_view);
+    std::ranges::copy(view, block.clip_or_view);
     source.prog0_blocks.push_back(block);
+    // A skinned draw's palette must travel with the list, or interpolating the turned list reads past it.
+    gfx::Prog0Palette palette{};
+    palette.bones[0][0][3] = 7;
+    source.palettes.push_back(palette);
     gfx::detail::Draw2DEntry ui;
     ui.vertices.resize(1);
     ui.vertices[0].x = 123;
-    source.entries.push_back(ui);
+    source.entries.emplace_back(ui);
     MouseFixedDisplayList(source, turned, 0.2f, 0.1f);
     gfx::detail::Mat4 place;
     ASSERT_TRUE(gfx::detail::InvertAffine(turned.cameras[0], place));
@@ -146,6 +153,8 @@ TEST(CameraFixedMouse, DisplayRotationKeepsEyePositionGameplayListUiAndOtherView
     EXPECT_FLOAT_EQ(std::get<gfx::detail::Draw2DEntry>(turned.entries[1]).vertices[0].x, 123);
     EXPECT_NE(std::get<gfx::detail::MeshEntry>(turned.entries[0]).constants.mvp[0], mesh.constants.mvp[0]);
     EXPECT_NEAR(turned.prog0_blocks[0].clip_or_view[0], turned.cameras[0][0], 1e-6);
+    ASSERT_EQ(turned.palettes.size(), 1u);
+    EXPECT_FLOAT_EQ(turned.palettes[0].bones[0][0][3], 7);
     MouseFixedDisplayList(source, turned, 0, 0);
     EXPECT_EQ(turned.cameras, source.cameras);
     EXPECT_FLOAT_EQ(std::get<gfx::detail::MeshEntry>(turned.entries[0]).constants.mvp[0], mesh.constants.mvp[0]);
@@ -251,7 +260,9 @@ TEST(CameraFixedMouse, RetailTownModesGateBothPointAndPathCameras) {
 }
 
 TEST(CameraFixedMouse, CullingConeIncludesRotatedScreenCorners) {
-    const float focal = 400, half_width = 256, half_height = 240;
+    const float focal = 400;
+    const float half_width = 256;
+    const float half_height = 240;
     const float radius = MouseFixedCullRadius(focal, focal, half_width, half_height);
     EXPECT_GT(radius, half_width);
     for (float yaw : {-15.0f, 0.0f, 15.0f}) {
@@ -282,10 +293,10 @@ TEST(CameraFixedMouseGpu, FixedLookOutlinePixelsMatchFullExtentReference) {
     dc::test::GfxFixture fixture(64, 48, 1, options);
     const auto           target = gfx::CreateRenderTarget(64, 48, true, true);
     ASSERT_NE(target, gfx::kNullTexture);
-    const gfx::LogicalRect           full{0, 0, 64, 48};
+    const gfx::LogicalRect           full{.x = 0, .y = 0, .w = 64, .h = 48};
     const uint8_t                    clear[4] = {};
     const std::vector<gfx::Vertex3D> triangle = {
-        {{-.2f, -.2f, .9f}}, {{.2f, -.2f, .9f}}, {{0, .2f, .9f}}};
+        {.position = {-.2f, -.2f, .9f}}, {.position = {.2f, -.2f, .9f}}, {.position = {0, .2f, .9f}}};
     const std::vector<uint32_t> indices{0, 1, 2};
     auto                        record = [&](float camera, bool outlined) {
         auto transform = gfx::IdentityMeshTransform();
@@ -307,11 +318,12 @@ TEST(CameraFixedMouseGpu, FixedLookOutlinePixelsMatchFullExtentReference) {
         gfx::SetInterpKey(17);
         if (outlined) {
             gfx::SetRenderTarget(target);
-            const gfx::LogicalRect crop{32 + camera * 32 - 7, 18, 14, 12};
+            const gfx::LogicalRect crop{.x = 32 + camera * 32 - 7, .y = 18, .w = 14, .h = 12};
             gfx::Clear(true, clear, false, 0, &crop, &full);
             gfx::DrawMeshImmediateProg0(triangle, indices, constants, block, {}, {}, &transform);
             gfx::SetRenderTarget(gfx::kMainTarget);
-            std::vector<gfx::Vertex2D> quad(4), display_quad(4);
+            std::vector<gfx::Vertex2D> quad(4);
+            std::vector<gfx::Vertex2D> display_quad(4);
             for (int i = 0; i < 4; ++i) {
                 const bool right = i == 1 || i == 2;
                 quad[i].x = quad[i].u = crop.x + (right ? crop.w : 0);
@@ -323,7 +335,7 @@ TEST(CameraFixedMouseGpu, FixedLookOutlinePixelsMatchFullExtentReference) {
             }
             gfx::TextureBinding binding;
             binding.texture = target;
-            const gfx::Presentation2D presentation{display_quad, {}};
+            const gfx::Presentation2D presentation{.vertices = display_quad, .state = {}};
             gfx::Draw2D(gfx::Primitive::Quads, quad, binding, {}, &presentation);
         } else {
             // Independent complete-pixel reference: draw the mesh directly, without
@@ -338,8 +350,10 @@ TEST(CameraFixedMouseGpu, FixedLookOutlinePixelsMatchFullExtentReference) {
         EXPECT_TRUE(gfx::ReadbackFrame(fixture.pixels, fixture.width, fixture.height));
         return fixture.pixels;
     };
-    auto             before = record(-.1f, true), after = record(.1f, true);
-    gfx::DisplayList turned, previous;
+    auto             before = record(-.1f, true);
+    auto             after = record(.1f, true);
+    gfx::DisplayList turned;
+    gfx::DisplayList previous;
     MouseFixedDisplayList(*before, previous, .26f, .17f);
     MouseFixedDisplayList(*after, turned, .26f, .17f);
     EXPECT_NE(turned.cameras[0], after->cameras[0]);

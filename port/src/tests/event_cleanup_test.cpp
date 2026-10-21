@@ -16,12 +16,12 @@
 namespace {
 struct CleanupProgram {
     RS_PROG_HEADER header{};
-    RS_PROGDATA    entry{100, offsetof(CleanupProgram, function)};
+    RS_PROGDATA    entry{.no = 100, .func = offsetof(CleanupProgram, function)};
     funcdata       function{};
     vmcode_t       code[3]{
-        {RS_OP_PUSH_CONST, RS_CONST_INT, EVENT_EXT_DNG_EFFECT_ALL_CLEAR},
-        {RS_OP_EXT,        1,            0                             },
-        {RS_OP_END,        0,            0                             }
+        {.op = RS_OP_PUSH_CONST, .arg1 = RS_CONST_INT, .arg2 = EVENT_EXT_DNG_EFFECT_ALL_CLEAR},
+        {.op = RS_OP_EXT,        .arg1 = 1,            .arg2 = 0                             },
+        {.op = RS_OP_END,        .arg1 = 0,            .arg2 = 0                             }
     };
 
     CleanupProgram() {
@@ -110,7 +110,8 @@ TEST_F(EventCleanup, SceneBindingsRetainEveryOtherRetailHandler) {
     for (int i = 0; i < retail.ext_func_num; ++i) {
         if (i == EVENT_EXT_DNG_EFFECT_ALL_CLEAR || i == EVENT_EXT_DIST_VECTOR ||
             i == EVENT_EXT_DIST_VECTOR2 || i == EVENT_EXT_AMG_GET_ATTR_STATUS ||
-            i == EVENT_EXT_OBJS_SET_EOH_FRAME_POS || i == EVENT_EXT_SWE_SET_COLOR ||
+            i == EVENT_EXT_OBJS_SET_EOH_FRAME_POS || i == EVENT_EXT_GET_FISHINGTOURNAMENT_ETC ||
+            i == EVENT_EXT_SWE_SET_COLOR ||
             i == EVENT_EXT_SWE_SET_TEXTURE || i == EVENT_EXT_SWE_START_EFFECT) {
             EXPECT_NE(EventScript.ext_func_table[i], retail.ext_func_table[i]);
         } else {

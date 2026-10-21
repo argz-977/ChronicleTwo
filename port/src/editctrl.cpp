@@ -16,8 +16,6 @@
 #include "scenevillager.hpp"
 #include "subgame.hpp"
 
-extern sceVu0FVECTOR PortTownSavedEye asm("EditCtrl_SavedEye");
-
 void TownMouseEyeAfterControl(CScene *scene, CPadControl *pad) {
     const InputMouseLook &look = InputGetMouseLook();
     static std::uint64_t  consumed_read = 0;
@@ -27,7 +25,7 @@ void TownMouseEyeAfterControl(CScene *scene, CPadControl *pad) {
     consumed_read = look.read;
     if (!scene || !pad || GetNowLoopNo() != LOOP_EDIT || IsEditMode() ||
         (PortEditViewMode != EDIT_VIEW_MODE_EYE &&
-         !(PortEditViewMode == EDIT_VIEW_MODE_PHOTO && NowTakePhoto())) ||
+         (PortEditViewMode != EDIT_VIEW_MODE_PHOTO || !NowTakePhoto())) ||
         PortEditLadderMode != EDIT_LADDER_MODE_NONE ||
         (!EditOnGround() && !TownFirstPersonOwns(scene, pad)) || scene->event_run || scene->active_camera != 0 ||
         GamePad__2.key_lock || SubGameRunning() || DebugInfo.debug_camera || mgCCamera::StopCamera) {
@@ -58,15 +56,16 @@ void TownMouseEyeAfterControl(CScene *scene, CPadControl *pad) {
 }
 
 PORT_OVERRIDE int EditControl(CScene *scene, CPadControl *pad) {
-    // Keep retail movement, ladder, eye-entry/exit and photo behavior, granting
-    // native eye look only after those helpers establish this frame's owner.
+    // Retail movement, ladder, eye entry/exit and photo behaviour run first; native eye look is
+    // granted only once they have settled this frame's owner.
     if (PortEditLadderMode != EDIT_LADDER_MODE_NONE) {
         PortEditLadderControl(scene, pad);
     } else {
         const bool eye_owned = TownFirstPersonOwns(scene, pad);
         if (!TownFirstPersonWalk(scene, pad)) {
             auto         *chara = eye_owned ? scene->GetCharacter(scene->player_chara) : nullptr;
-            sceVu0FVECTOR before, after;
+            sceVu0FVECTOR before;
+            sceVu0FVECTOR after;
             if (chara) {
                 chara->GetPosition(before);
             }

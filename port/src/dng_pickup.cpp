@@ -2,6 +2,7 @@
 #include "mw_runtime.h"
 
 #include <cmath>
+#include <numbers>
 #include <unordered_map>
 
 #include "dng_effect.hpp"
@@ -31,12 +32,12 @@ mgPortPickupScope::mgPortPickupScope(const void *pickup) {
     if (found == generations.end()) {
         gfx::SetInterp2D({});
     } else {
-        gfx::SetInterp2D({static_cast<gfx::InterpKey>(reinterpret_cast<uintptr_t>(pickup)), found->second, true, 200.0f});
+        gfx::SetInterp2D({.key = static_cast<gfx::InterpKey>(reinterpret_cast<uintptr_t>(pickup)), .generation = found->second, .world_corners = true, .teleport_distance = 200.0f});
     }
 }
 
 mgPortPickupScope::~mgPortPickupScope() {
-    gfx::SetInterp2D({static_cast<gfx::InterpKey>(key_), generation_, world_corners_, teleport_distance_});
+    gfx::SetInterp2D({.key = static_cast<gfx::InterpKey>(key_), .generation = generation_, .world_corners = world_corners_, .teleport_distance = teleport_distance_});
 }
 
 PORT_OVERRIDE void CPullItem::Draw(mgCTexture *texture) {
@@ -66,16 +67,17 @@ PORT_OVERRIDE void CPullItem::Draw(mgCTexture *texture) {
     sceVu0CopyVector(center, pos);
     center[1] += height / 2.0f;
     center[1] += bob_height * sinf(angle);
-    if (glow_phase > PI) {
+    if (glow_phase > std::numbers::pi_v<float>) {
         glow_phase = 0.0f;
     } else {
-        glow_phase += PI / 15.0f;
+        glow_phase += std::numbers::pi_v<float> / 15.0f;
     }
     const float shadow_width = width + width * sinf(glow_phase);
     const float shadow_height = height + height * sinf(glow_phase);
     sceVu0CopyVector(draw_pos, center);
 
-    int first[4], last[4];
+    int first[4];
+    int last[4];
     if (glow && mgTransWorldPrim3DSprite(first, last, center, shadow_width, shadow_height, 0)) {
         sprite.TextureCrd(0x61, 1);
         sprite.Vertex4(first);

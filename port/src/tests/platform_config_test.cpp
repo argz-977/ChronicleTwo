@@ -18,7 +18,7 @@ namespace fs = std::filesystem;
 
 namespace {
 
-// Each case gets an empty save root: SettingsChange on a window-affecting field would open a window,
+// Each case gets an empty run directory: SettingsChange on a window-affecting field would open a window,
 // so the cases that need one write the file and load it.
 class PlatformConfig : public testing::Test {
 protected:
@@ -26,7 +26,7 @@ protected:
         root_ = fs::temp_directory_path() / std::format("dc2_config_{}", dc::test::ProcessId());
         fs::remove_all(root_);
         fs::create_directories(root_);
-        PathsSetSaveRoot(root_);
+        PathsSetSaveRoot(root_ / "saves");
     }
 
     void TearDown() override {
@@ -35,11 +35,11 @@ protected:
         fs::remove_all(root_, error);
     }
 
-    fs::path Path() const { return root_ / "config.json"; }
+    [[nodiscard]] fs::path Path() const { return root_ / "config.json"; }
 
     void Write(std::string_view text) const { std::ofstream(Path(), std::ios::binary) << text; }
 
-    std::string Read() const {
+    [[nodiscard]] std::string Read() const {
         std::ifstream file(Path(), std::ios::binary);
         return {std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
     }
@@ -63,10 +63,18 @@ void CaptureChange(const HostSettings &before, const HostSettings &after) {
 TEST_F(PlatformConfig, DefaultsAreWrittenWhenAbsent) {
     ASSERT_FALSE(ConfigLoad());
     ASSERT_TRUE(fs::exists(Path()));
+    EXPECT_FALSE(fs::exists(PathsSaveRoot() / "config.json"));
     ASSERT_TRUE(ConfigParse(Read()) == Config{});
     ASSERT_TRUE(SettingsGet().tick_rate == kConfigTickRateDefault);
     ASSERT_TRUE(ConfigLoad());
     ASSERT_TRUE(SettingsGet() == static_cast<const HostSettings &>(Config{}));
+}
+
+TEST_F(PlatformConfig, TrailingSaveSeparatorKeepsConfigInParentDirectory) {
+    PathsSetSaveRoot(PathsSaveRoot() / "");
+    ASSERT_FALSE(ConfigLoad());
+    EXPECT_TRUE(fs::exists(Path()));
+    EXPECT_FALSE(fs::exists(PathsSaveRoot() / "config.json"));
 }
 
 TEST_F(PlatformConfig, TinyFrameCapsClampButZeroRemainsUncapped) {
@@ -77,8 +85,8 @@ TEST_F(PlatformConfig, TinyFrameCapsClampButZeroRemainsUncapped) {
 
 TEST_F(PlatformConfig, FullFileRoundTrips) {
     Config full;
-    full.tick_rate = 120.0;
     full.present_mode = ConfigPresentMode::Mailbox;
+    full.render_thread = ConfigRenderThread::Async;
     full.max_fps = 144.0;
     full.window_width = 1920;
     full.window_height = 1080;
@@ -88,7 +96,10 @@ TEST_F(PlatformConfig, FullFileRoundTrips) {
     full.master_volume = 0.5f;
     full.surround = true;
     full.soundtrack = true;
-    full.key_bindings = {ConfigKeyBinding{"cross", {"Space", "Z"}}, ConfigKeyBinding{"start", {"Return"}}};
+    full.key_bindings = {
+        ConfigKeyBinding{.action = "cross", .keys = {"Space", "Z"}},
+        ConfigKeyBinding{.action = "start", .keys = {"Return"}    }
+    };
     full.mouse_sensitivity = 0.25f;
     full.stick_sensitivity = 1.5f;
     full.stick_invert_x = true;
@@ -109,6 +120,10 @@ TEST_F(PlatformConfig, FullFileRoundTrips) {
     full.glyph_device = ConfigGlyphDevice::Ps5Color;
     full.mouse_release_keys = {"F12", "Pause"};
     full.font_sharp = true;
+    full.dualsense_speaker = false;
+    full.controller_volume = 1.5f;
+    full.dualsense_haptics = ConfigHaptics::Vibration;
+    full.haptics_strength = 0.75f;
 
     ASSERT_TRUE(ConfigParse(ConfigSerialize(full)) == full);
 
@@ -129,9 +144,28 @@ TEST_F(PlatformConfig, TextFontIsOptInAndRoundTrips) {
     }
 }
 
-TEST_F(PlatformConfig, TickRateOutsideItsRangeKeepsTheDefault) {
-    ASSERT_TRUE(ConfigParse(R"({"game": {"tick_rate": 25}})").tick_rate == 25.0);
-    ASSERT_TRUE(ConfigParse(R"({"game": {"tick_rate": 240}})").tick_rate == 240.0);
+TEST_F(PlatformConfig, DualSenseSpeakerIsOnByDefaultAndRoundTrips) {
+    EXPECT_TRUE(ConfigParse("").dualsense_speaker);
+    const Config off = ConfigParse(R"({"audio":{"dualsense_speaker":false,"controller_volume":0.5}})");
+    EXPECT_FALSE(off.dualsense_speaker);
+    EXPECT_EQ(off.controller_volume, 0.5f);
+    EXPECT_TRUE(ConfigParse(ConfigSerialize(off)) == off);
+    for (const char *value : {"null", "1", "\"off\""}) {
+        EXPECT_TRUE(ConfigParse(std::string("{\"audio\":{\"dualsense_speaker\":") + value + "}}").dualsense_speaker);
+    }
+    // Either value of the legacy audio.robot_voice key leaves the speaker on.
+    for (const char *value : {"\"tv\"", "\"controller\""}) {
+        EXPECT_TRUE(ConfigParse(std::string("{\"audio\":{\"robot_voice\":") + value + "}}").dualsense_speaker);
+    }
+    EXPECT_FALSE(ConfigParse(R"({"audio":{"robot_voice":"controller","dualsense_speaker":false}})").dualsense_speaker);
+    for (const char *value : {"-0.1", "2.1", "\"loud\""}) {
+        EXPECT_EQ(ConfigParse(std::string("{\"audio\":{\"controller_volume\":") + value + "}}").controller_volume, 1.0f);
+    }
+}
+
+TEST_F(PlatformConfig, LegacyTickRatesNeverOverrideSixty) {
+    ASSERT_TRUE(ConfigParse(R"({"game": {"tick_rate": 25}})").tick_rate == 60.0);
+    ASSERT_TRUE(ConfigParse(R"({"game": {"tick_rate": 240}})").tick_rate == 60.0);
     for (const char *value : {"0", "-3", "24.9", "240.1", "1e9", "\"fast\"", "null", "true"}) {
         std::string json = std::string(R"({"game": {"tick_rate": )") + value + "}}";
         ASSERT_TRUE(ConfigParse(json).tick_rate == kConfigTickRateDefault) << value;
@@ -171,6 +205,36 @@ TEST_F(PlatformConfig, DebugModeInvalidValuesKeepTheDefault) {
     }
 }
 
+TEST_F(PlatformConfig, RenderThreadDefaultsToAsyncAndRoundTrips) {
+    ASSERT_TRUE(Config{}.render_thread == ConfigRenderThread::Async);
+    ASSERT_TRUE(ConfigParse(R"({"video": {"render_thread": "sideways"}})").render_thread == ConfigRenderThread::Async);
+    Config config;
+    config.render_thread = ConfigRenderThread::Off;
+    const Config parsed = ConfigParse(ConfigSerialize(config));
+    ASSERT_TRUE(parsed.render_thread == ConfigRenderThread::Off);
+    ASSERT_TRUE(parsed == config);
+}
+
+TEST_F(PlatformConfig, SkipIntroDefaultsToOffAndRoundTrips) {
+    ASSERT_FALSE(Config{}.skip_intro);
+    ASSERT_FALSE(ConfigParse(R"({"game": {"skip_intro": "yes"}})").skip_intro);
+    Config config;
+    config.skip_intro = true;
+    const Config parsed = ConfigParse(ConfigSerialize(config));
+    ASSERT_TRUE(parsed.skip_intro);
+    ASSERT_TRUE(parsed == config);
+}
+
+TEST_F(PlatformConfig, AutoUseEventItemDefaultsToOffAndRoundTrips) {
+    ASSERT_FALSE(Config{}.auto_use_event_item);
+    ASSERT_FALSE(ConfigParse(R"({"game": {"auto_use_event_item": 1}})").auto_use_event_item);
+    Config config;
+    config.auto_use_event_item = true;
+    const Config parsed = ConfigParse(ConfigSerialize(config));
+    ASSERT_TRUE(parsed.auto_use_event_item);
+    ASSERT_TRUE(parsed == config);
+}
+
 TEST_F(PlatformConfig, DebugModeRoundTripsThroughSerialize) {
     Config config;
     config.debug_mode = true;
@@ -203,9 +267,9 @@ TEST_F(PlatformConfig, SettingsChangeStoresAndNormalises) {
     changed.tick_rate = 120.0;
     changed.rumble_strength = 2.0f;
     ASSERT_TRUE(SettingsChange(changed));
-    ASSERT_TRUE(SettingsGet().tick_rate == 120.0);
+    ASSERT_TRUE(SettingsGet().tick_rate == 60.0);
     ASSERT_TRUE(SettingsGet().rumble_strength == 1.0f);
-    ASSERT_TRUE(ConfigParse(Read()).tick_rate == 120.0);
+    ASSERT_TRUE(ConfigParse(Read()).tick_rate == 60.0);
 }
 
 TEST_F(PlatformConfig, InvalidFilesAreBackedUpAndReplacedOnChange) {
@@ -250,9 +314,9 @@ TEST_F(PlatformConfig, ExistingUnreadableFileIsNeverOverwritten) {
     ASSERT_FALSE(ConfigLoad());
     ASSERT_TRUE(SettingsGet() == static_cast<const HostSettings &>(Config{}));
     HostSettings changed = SettingsGet();
-    changed.tick_rate = 120.0;
+    changed.master_volume = 0.5f;
     ASSERT_FALSE(SettingsChange(changed));
-    ASSERT_TRUE(SettingsGet().tick_rate == 120.0);
+    ASSERT_TRUE(SettingsGet().master_volume == 0.5f);
     ASSERT_FALSE(ConfigSave());
     ASSERT_TRUE(fs::is_directory(Path()));
     ASSERT_FALSE(fs::is_regular_file(Path()));
@@ -263,11 +327,11 @@ TEST_F(PlatformConfig, ChangeHookSeesBeforeAndAfter) {
     g_hook_calls = 0;
     ConfigSetChangeHook(CaptureChange);
     HostSettings changed = SettingsGet();
-    changed.tick_rate = 120.0;
+    changed.master_volume = 0.5f;
     ASSERT_TRUE(SettingsChange(changed));
     ASSERT_TRUE(g_hook_calls == 1);
-    ASSERT_TRUE(g_hook_before.tick_rate == kConfigTickRateDefault);
-    ASSERT_TRUE(g_hook_after.tick_rate == 120.0);
+    ASSERT_TRUE(g_hook_before.master_volume == 1.0f);
+    ASSERT_TRUE(g_hook_after.master_volume == 0.5f);
     ASSERT_TRUE(SettingsChange(SettingsGet()));
     ASSERT_TRUE(g_hook_calls == 1);
     ConfigSetChangeHook(nullptr);
@@ -412,4 +476,36 @@ TEST_F(PlatformConfig, ReadErrorsNeverReplaceOriginalOrPublishPartialBackup) {
             }
         }
     }
+}
+
+TEST_F(PlatformConfig, NativeTimingDefaultsToSixtyAndIgnoresLegacyKeys) {
+    EXPECT_DOUBLE_EQ(ConfigParse("").tick_rate, 60);
+    for (const char *json : {R"({"game":{"timing":"pal","tick_rate":50}})",
+                             R"({"game":{"timing":"ntsc","tick_rate":60}})",
+                             R"({"game":{"timing":false,"tick_rate":"slow"}})"}) {
+        EXPECT_DOUBLE_EQ(ConfigParse(json).tick_rate, 60) << json;
+    }
+    EXPECT_FALSE(ConfigLoad());
+    EXPECT_DOUBLE_EQ(SettingsGet().tick_rate, 60);
+    const auto defaults = nlohmann::json::parse(Read());
+    EXPECT_FALSE(defaults["game"].contains("timing"));
+    EXPECT_FALSE(defaults["game"].contains("tick_rate"));
+}
+
+TEST_F(PlatformConfig, LegacyTimingSurvivesUnrelatedSettingsWithoutControllingRuntime) {
+    const std::string legacy = R"({"game":{"timing":"pal","tick_rate":50},"audio":{"master_volume":0.75}})";
+    Write(legacy);
+    ASSERT_TRUE(ConfigLoad());
+    EXPECT_EQ(Read(), legacy);
+    EXPECT_DOUBLE_EQ(ConfigGet().tick_rate, 60);
+    Config changed = ConfigGet();
+    changed.master_volume = 0.25f;
+    ASSERT_TRUE(ConfigChange(changed));
+    ASSERT_TRUE(ConfigLoad());
+    EXPECT_DOUBLE_EQ(ConfigGet().tick_rate, 60);
+    EXPECT_FLOAT_EQ(ConfigGet().master_volume, 0.25f);
+    const auto saved = nlohmann::json::parse(Read());
+    EXPECT_EQ(saved["game"]["timing"], "pal");
+    EXPECT_EQ(saved["game"]["tick_rate"], 50);
+    EXPECT_EQ(saved["audio"]["master_volume"], 0.25f);
 }

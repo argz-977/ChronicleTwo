@@ -99,7 +99,7 @@ TEST(FontPortGpu, SharpDrawingKeepsRetailLayoutAndLineBreaks) {
     const auto root = std::filesystem::temp_directory_path() /
                       ("dc2_font_" + std::to_string(dc::test::ProcessId()));
     ASSERT_FALSE(std::filesystem::exists(root));
-    std::filesystem::create_directories(root / "lang");
+    std::filesystem::create_directories(root / "saves" / "lang");
 
     struct Cleanup {
         std::filesystem::path root;
@@ -110,10 +110,10 @@ TEST(FontPortGpu, SharpDrawingKeepsRetailLayoutAndLineBreaks) {
         }
     } cleanup{root};
 
-    std::filesystem::copy_file(PathsFromUtf8(file), root / "lang" / "font.ttf");
-    PathsSetSaveRoot(root);
+    std::filesystem::copy_file(PathsFromUtf8(file), root / "saves" / "lang" / "font.ttf");
+    PathsSetSaveRoot(root / "saves");
     auto select = [&](const char *choice) {
-        std::ofstream(root / "config.json") << "{\"video\":{\"text_font\":\"" << choice << "\"}}";
+        std::ofstream(root / "config.json") << R"({"video":{"text_font":")" << choice << "\"}}";
         EXPECT_TRUE(ConfigLoad());
     };
     dc::test::GfxFixture                     gfx(1440, 1080, 1.0f, dc::test::GfxOptions{.offscreen = true});
@@ -129,7 +129,8 @@ TEST(FontPortGpu, SharpDrawingKeepsRetailLayoutAndLineBreaks) {
     char  direct[] = "Wi 0129!\nA long menu item";
     CFont font;
     select("original");
-    int old_w = 0, old_h = 0;
+    int old_w = 0;
+    int old_h = 0;
     font.CalcDrawWH(direct, &old_w, &old_h);
     font.DrawDirect(direct, 40, 30);
     const auto original_textures = textures;
@@ -139,10 +140,12 @@ TEST(FontPortGpu, SharpDrawingKeepsRetailLayoutAndLineBreaks) {
     char   text[] = "Wide Wi, 0129!\nSecond line (X) done";
     ASSERT_EQ(mes.MakeMesWinTbl(text), 1);
     const auto original = Entries(mes);
-    const int  old_font_w = mes.font_w, old_font_h = mes.font_h;
+    const int  old_font_w = mes.font_w;
+    const int  old_font_h = mes.font_h;
     select("sharp");
     ASSERT_TRUE(ConfigGet().font_sharp);
-    int new_w = 0, new_h = 0;
+    int new_w = 0;
+    int new_h = 0;
     font.CalcDrawWH(direct, &new_w, &new_h);
     EXPECT_EQ(new_w, old_w);
     EXPECT_EQ(new_h, old_h);

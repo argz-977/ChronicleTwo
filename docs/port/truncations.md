@@ -30,9 +30,9 @@ Origin is where the pointer points, where the expression shows it: **image** (a 
 |---|---|---|---|
 | round-trip | 0 | 2 | 2 |
 | resolved | 1 | 0 | 1 |
-| escapes | 31 | 3 | 34 |
-| low-bits | 4 | 6 | 10 |
-| **all** | 36 | 11 | 47 |
+| escapes | 31 | 4 | 35 |
+| low-bits | 6 | 4 | 10 |
+| **all** | 38 | 10 | 48 |
 
 Open round trips by unit: ps2/src/movie.cpp 2.
 
@@ -72,6 +72,12 @@ the same literals in their **masked** column when the masked expression holds a 
 | ps2/src/movie.cpp | 903 | no | `chcr = (chcr & 0xFFFFFFF) \| 0x30000000;` |
 | ps2/src/movie.cpp | 946 | no | `MOVIE_CHCR_LOW_MASK = 0xFFFFFFF, /**< Keeps the low 28 bits of a saved DMA channel control word when its upper tag bits are replaced. */` |
 
+## port/src/item_icon3d.cpp (1 rows)
+
+| line | function | state | class | expression | origin | use | phase |
+|---|---|---|---|---|---|---|---|
+| 57 | IconTextures::IconTextures | open | escapes | `reinterpret_cast < std :: uintptr_t >(storage.data())` | call (data) | argument: stSetBuffer | - |
+
 ## ps2/src/dataread.cpp (1 rows)
 
 | line | function | state | class | expression | origin | use | phase |
@@ -82,8 +88,8 @@ the same literals in their **masked** column when the masked expression holds a 
 
 | line | function | state | class | expression | origin | use | phase |
 |---|---|---|---|---|---|---|---|
-| 303 | CEditMap::SaveData | open | low-bits | `(uptr)out` | local pointer | test | - |
-| 494 | CEditMap::LoadData | open | low-bits | `(uptr)in` | local pointer | test | - |
+| 303 | CEditMap::SaveData | replaced | low-bits | `(uptr)out` | local pointer | test | - |
+| 494 | CEditMap::LoadData | replaced | low-bits | `(uptr)in` | local pointer | test | - |
 
 ## ps2/src/mainloop.cpp (1 rows)
 
@@ -95,7 +101,7 @@ the same literals in their **masked** column when the masked expression holds a 
 
 | line | function | state | class | expression | origin | use | phase |
 |---|---|---|---|---|---|---|---|
-| 6860 | CMenuItemInfo::ExitEnd | open | escapes | `(int)*(void * *)& MenuCommonInfo->cursor` | field | store: MenuSystemDataPtr->item_cursor | - |
+| 6861 | CMenuItemInfo::ExitEnd | open | escapes | `(int)*(void * *)& MenuCommonInfo->cursor` | field | store: MenuSystemDataPtr->item_cursor | - |
 
 ## ps2/src/mg_drawprim.cpp (2 rows)
 
@@ -206,7 +212,7 @@ A pointer cast to a narrow integer, or a `uptr`/`sptr` value that a conversion n
 | ps2/src/mg_visual.cpp | 1 |
 | ps2/src/movie.cpp | 12 |
 
-- `ps2/src/menusys.cpp:6860 CMenuItemInfo::ExitEnd field CMenuSystemData::item_cursor (ps2/include/menusystemdata.hpp:55)`: records: stored into the save record CMenuSystemData::item_cursor
+- `ps2/src/menusys.cpp:6861 CMenuItemInfo::ExitEnd field CMenuSystemData::item_cursor (ps2/include/menusystemdata.hpp:55)`: records: stored into the save record CMenuSystemData::item_cursor
 - `ps2/src/mg_visual.cpp:610 mgCVisualFixMDT::DataAssignMDT other (memory)`: prog0: DMA tag words / packet build (CreatePacket, Draw, DataAssignMDT)
 - `ps2/src/movie.cpp:984 viBufRestartDMA local qwc`: movies: DMA/IPU/IOP addresses (unit replaced whole)
 - `ps2/src/movie.cpp:998 viBufRestartDMA local qwc`: movies: DMA/IPU/IOP addresses (unit replaced whole)
@@ -266,8 +272,8 @@ A pointer cast to a narrow integer, or a `uptr`/`sptr` value that a conversion n
 
 Narrowed expression is an address-alias mask (`& K`, `K` a non-negative 32-bit constant), a residue (`% K`), or a difference of two pointer-wide operands, bare or divided or shifted by a constant. Never fails `--check`.
 
-- `ps2/src/editdata.cpp:303 CEditMap::SaveData other`: benign:low-bits (open)
-- `ps2/src/editdata.cpp:494 CEditMap::LoadData other`: benign:low-bits (open)
+- `ps2/src/editdata.cpp:303 CEditMap::SaveData other`: benign:low-bits (replaced)
+- `ps2/src/editdata.cpp:494 CEditMap::LoadData other`: benign:low-bits (replaced)
 - `ps2/src/fishing.cpp:1328 CreateLoadThread local misalignment`: benign:low-bits (open)
 - `ps2/src/mainloop.cpp:557 MainLoop local alignment`: benign:residue (replaced)
 - `ps2/src/mainloop.cpp:1450 LoadFontTexture local misalign`: benign:low-bits (open)

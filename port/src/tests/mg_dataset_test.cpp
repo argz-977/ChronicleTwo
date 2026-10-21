@@ -9,7 +9,7 @@
 TEST(MgDataset, CopyFrameTableDoesNotOverlapFrames) {
     constexpr int                  count = 64;
     std::array<mgCFrame, count>    frames;
-    std::array<mgCFrame *, count>  table;
+    std::array<mgCFrame *, count>  table{};
     std::array<std::string, count> names;
     for (int i = 0; i < count; ++i) {
         names[i] = "frame" + std::to_string(i);
@@ -23,7 +23,7 @@ TEST(MgDataset, CopyFrameTableDoesNotOverlapFrames) {
     static u_long128 storage[4096];
     mgCMemory        memory;
     memory.stSetBuffer(storage, 4096);
-    mgCFrame *copy = mgCopyFrame(&frames[0], &memory, 0);
+    mgCFrame *copy = mgCopyFrame(frames.data(), &memory, 0);
     ASSERT_NE(copy, nullptr);
     ASSERT_EQ(copy->frame_num, count);
     ASSERT_NE(copy->frame_list, nullptr);
@@ -44,7 +44,7 @@ TEST(MgDataset, CopyFrameTableDoesNotOverlapFrames) {
 TEST(MgDataset, CopyFrameRebuildsHierarchyInCopiedFrames) {
     constexpr int                  count = 68;
     std::array<mgCFrame, count>    frames;
-    std::array<mgCFrame *, count>  table;
+    std::array<mgCFrame *, count>  table{};
     std::array<std::string, count> names;
     for (int i = 0; i < count; ++i) {
         names[i] = "bone" + std::to_string(i);
@@ -60,7 +60,7 @@ TEST(MgDataset, CopyFrameRebuildsHierarchyInCopiedFrames) {
     static u_long128 storage[4096];
     mgCMemory        memory;
     memory.stSetBuffer(storage, 4096);
-    mgCFrame *copy = mgCopyFrame(&frames[0], &memory, 0);
+    mgCFrame *copy = mgCopyFrame(frames.data(), &memory, 0);
     ASSERT_NE(copy, nullptr);
     ASSERT_EQ(copy->frame_num, count);
     ASSERT_EQ(copy->parent, nullptr);

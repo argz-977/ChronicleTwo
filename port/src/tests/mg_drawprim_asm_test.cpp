@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
 
-#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <limits>
@@ -36,7 +35,10 @@ public:
         prim.write = nullptr;
         mgPortSetPrimSink([this](gfx::Primitive primitive, std::span<const gfx::Vertex2D> vertices,
                                  const gfx::TextureBinding &texture, const gfx::DrawState &state) {
-            batches.push_back({primitive, {vertices.begin(), vertices.end()}, texture, state});
+            batches.push_back({
+                .primitive = primitive, .vertices = {vertices.begin(), vertices.end()},
+                     .texture = texture, .state = state
+            });
         });
     }
 
@@ -78,7 +80,7 @@ private:
 } // namespace
 
 TEST(MgDrawPrimAsm, Data0TruncatesEachLaneTowardZero) {
-    mgCDrawPrim prim;
+    mgCDrawPrim           prim;
     alignas(16) u_long128 buffer[2] = {};
     prim.write = buffer;
 
@@ -94,7 +96,7 @@ TEST(MgDrawPrimAsm, Data0TruncatesEachLaneTowardZero) {
 }
 
 TEST(MgDrawPrimAsm, Data0AdvancesWriteByOneQuadword) {
-    mgCDrawPrim prim;
+    mgCDrawPrim           prim;
     alignas(16) u_long128 buffer[2] = {};
     prim.write = buffer;
 
@@ -105,7 +107,7 @@ TEST(MgDrawPrimAsm, Data0AdvancesWriteByOneQuadword) {
 }
 
 TEST(MgDrawPrimAsm, Data0SaturatesPerSign) {
-    mgCDrawPrim prim;
+    mgCDrawPrim           prim;
     alignas(16) u_long128 buffer[1] = {};
     prim.write = buffer;
 
@@ -121,7 +123,7 @@ TEST(MgDrawPrimAsm, Data0SaturatesPerSign) {
 }
 
 TEST(MgDrawPrimAsm, Data0ZeroAndNegativeZeroGiveZero) {
-    mgCDrawPrim prim;
+    mgCDrawPrim           prim;
     alignas(16) u_long128 buffer[1] = {};
     prim.write = buffer;
 
@@ -137,7 +139,7 @@ TEST(MgDrawPrimAsm, Data0ZeroAndNegativeZeroGiveZero) {
 }
 
 TEST(MgDrawPrimAsm, Data4ScalesBy16BeforeTruncating) {
-    mgCDrawPrim prim;
+    mgCDrawPrim           prim;
     alignas(16) u_long128 buffer[1] = {};
     prim.write = buffer;
 
@@ -153,7 +155,7 @@ TEST(MgDrawPrimAsm, Data4ScalesBy16BeforeTruncating) {
 }
 
 TEST(MgDrawPrimAsm, Data4SaturatesPerSignAfterScaling) {
-    mgCDrawPrim prim;
+    mgCDrawPrim           prim;
     alignas(16) u_long128 buffer[1] = {};
     prim.write = buffer;
 
@@ -169,7 +171,7 @@ TEST(MgDrawPrimAsm, Data4SaturatesPerSignAfterScaling) {
 }
 
 TEST(MgDrawPrimAsm, Data4ZeroAndNegativeZeroGiveZero) {
-    mgCDrawPrim prim;
+    mgCDrawPrim           prim;
     alignas(16) u_long128 buffer[1] = {};
     prim.write = buffer;
 

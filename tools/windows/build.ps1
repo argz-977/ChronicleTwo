@@ -1,6 +1,6 @@
 #requires -Version 7.0
 param([string]$Root, [string]$BuildDirectory, [switch]$Tests,
-      [ValidateRange(1, 65536)][int]$Jobs = 12)
+      [ValidateRange(1, 65536)][int]$Jobs = [Environment]::ProcessorCount)
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot/common.ps1"
 $root = Resolve-WindowsRoot $Root
@@ -13,6 +13,27 @@ $env:PATH = "$rust;$llvm;$env:PATH"
 $targets = @('darkchronicle', 'dc2data')
 if ($Tests) { $targets += @('darkchronicle_tests', 'dc2data_bridge_test') }
 $log = Join-Path $build 'build.log'
+New-Item -ItemType Directory -Force $build | Out-Null
+# Two ninjas appending to one .ninja_deps interleave its records. Ninja then discards every record after the
+# damage on each load without truncating the file, so all later builds recompile everything.
+$lockFile = Join-Path $build '.kazarov-build.lock'
+$lock = $null
+$announced = $false
+while ($null -eq $lock) {
+    try {
+        $lock = [IO.File]::Open($lockFile, 'OpenOrCreate', 'ReadWrite', 'None')
+    } catch [IO.IOException], [UnauthorizedAccessException] {
+        if (-not $announced) { Write-Host "kazarov: waiting for another build of $build"; $announced = $true }
+        Start-Sleep -Milliseconds 500
+    }
+}
+# Recompacting rewrites the logs from the records ninja can read, repairing damage left by an earlier
+# concurrent or killed build.
+$ninja = Join-Path $root 'deps/ninja/ninja.exe'
+if ((Test-Path -LiteralPath $ninja) -and (Test-Path -LiteralPath (Join-Path $build 'build.ninja')) -and
+    (Test-Path -LiteralPath (Join-Path $build '.ninja_deps'))) {
+    & $ninja -C $build -t recompact 2>&1 | Out-Null
+}
 Write-Host "kazarov: building $build ($Jobs jobs; log: $log)"
 $timer = [Diagnostics.Stopwatch]::StartNew()
 # Keep the native invocation in PowerShell's foreground pipeline so Ctrl+C reaches

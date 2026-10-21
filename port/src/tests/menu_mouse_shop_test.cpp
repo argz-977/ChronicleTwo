@@ -1,11 +1,12 @@
 #include <gtest/gtest.h>
 
-#include <limits>
+#include <algorithm>
 #include <memory>
 
 #include "gamepad.hpp"
 #include "mainloop.hpp"
 #include "menu_mouse.hpp"
+#include "menucommon.hpp"
 #include "menumain.hpp"
 #include "menushop.hpp"
 #include "mglib.hpp"
@@ -74,7 +75,8 @@ protected:
         boards[3].parts_num = 6;
         char *part_names[] = {const_cast<char *>("\x90\x94\x94\xC2\x32"), const_cast<char *>("NO"), const_cast<char *>("\x90\x94"),
                               const_cast<char *>("\x96\xEE\x88\xF3\x8F\xE3"), const_cast<char *>("\x96\xEE\x88\xF3\x89\xBA"), const_cast<char *>("0")};
-        int   px[] = {40, 140, 40, 40, 40, 0}, py[] = {100, 100, 100, 80, 130, 100};
+        int   px[] = {40, 140, 40, 40, 40, 0};
+        int   py[] = {100, 100, 100, 80, 130, 100};
         for (int i = 0; i < 6; ++i) {
             parts[i].name = part_names[i];
             parts[i].dtype = MENUFORMPARTS_DTYPE_FUNCINFO;
@@ -120,6 +122,45 @@ protected:
         keys.SelDataInit();
         keys.CheckSelectKey();
     }
+
+    // At, then the cursor part of the retail CShopMenu::KeyStep (ps2/src/menushop.cpp:808-855, :870-871, :918-981),
+    // which reads its cursors after the mouse hook. The whole step needs the shop's messages and textures.
+    void Step(float x, float y, unsigned buttons = 0, float wheel = 0) {
+        At(x, y, buttons, wheel);
+        const int lr = keys.CheckLRKey();
+        switch (menu.key_arg_no) {
+            case SHOP_MENU_MODE_BUY_LIST: {
+                const int old_pos = menu.list_pos;
+                const int old_top = menu.list_top;
+                const int moved = MenuListKeyCheck(lr, &menu.list_pos, &menu.list_top, stock.item_num, SHOP_LIST_LINE, 0, 0);
+                if (moved || old_pos != menu.list_pos || old_top != menu.list_top) {
+                    MenuSePlay(SYSTEM_SE_CURSOR);
+                }
+                break;
+            }
+            case SHOP_MENU_MODE_BAG:
+                MenuItemBrdKey(lr, &menu.bag_pos, &menu.bag_top, ITEM_BOARD_MAIN); // Retail's own sound.
+                break;
+            case SHOP_MENU_MODE_BUY_NUM:
+            case SHOP_MENU_MODE_SELL_NUM: {
+                const int old_cursor = menu.num_cursor;
+                const int old_num = menu.num;
+                if (menu.num_cursor == 0) {
+                    menu.num += (lr & MENU_SELECT_KEY_UP ? 1 : 0) - (lr & MENU_SELECT_KEY_DOWN ? 1 : 0);
+                }
+                if (menu.num <= 0) {
+                    menu.num = 1;
+                }
+                menu.num = std::min(menu.num, menu.num_max);
+                if (old_cursor != menu.num_cursor || old_num != menu.num) {
+                    MenuSePlay(SYSTEM_SE_CURSOR);
+                }
+                break;
+            }
+            default:
+                break;
+        }
+    }
 };
 
 TEST_F(ShopMouse, HoverSelectsBothPanesBeforeClickConfirms) {
@@ -136,31 +177,217 @@ TEST_F(ShopMouse, HoverSelectsBothPanesBeforeClickConfirms) {
     EXPECT_EQ(menu.key_arg_no, SHOP_MENU_MODE_BUY_LIST);
 }
 
-TEST_F(ShopMouse, WheelRoutesToPaneUnderPointerAndUsesRetailScroll) {
-    At(320, 170);
-    At(60, 136, 0, -1);
+TEST_F(ShopMouse, WheelScrollsTheLongGoodsListARowAndTakesTheRowUnderThePointer) {
+    At(60, 100);
+    EXPECT_EQ(menu.list_pos, 0);
+    At(60, 100, 0, -1);
     EXPECT_EQ(menu.key_arg_no, SHOP_MENU_MODE_BUY_LIST);
-    EXPECT_EQ(keys.CheckLRKey(), MENU_SELECT_KEY_DOWN);
-    MenuListKeyCheck(keys.select_key, &menu.list_pos, &menu.list_top, stock.item_num, 6, 0, 0);
+    EXPECT_EQ(menu.list_top, 1);
+    EXPECT_EQ(menu.list_pos, 1); // The row that comes under the pointer.
+    EXPECT_EQ(keys.CheckLRKey(), 0);
+    // The retail key step keeps the new scroll.
+    MenuListKeyCheck(keys.CheckLRKey(), &menu.list_pos, &menu.list_top, stock.item_num, SHOP_LIST_LINE, 0, 0);
+    EXPECT_EQ(menu.list_top, 1);
     EXPECT_EQ(menu.list_pos, 1);
-    menu.bag_pos = 24;
-    At(320, 170, 0, -1);
+    // Row 0 is still drawn under the pointer while the list eases; it is sliding out.
+    At(61, 100);
+    EXPECT_EQ(menu.list_pos, 1);
+    boards[2].y = 40 - 44; // The list at rest.
+    At(60, 150);
+    EXPECT_EQ(menu.list_pos, 2);
+    At(60, 150, 0, 3);
+    EXPECT_EQ(menu.list_top, 0); // Stops at the top.
+    EXPECT_EQ(menu.list_pos, 1);
+    menu.list_top = stock.item_num - SHOP_LIST_LINE;
+    menu.list_pos = stock.item_num - 1;
+    At(60, 300, 0, -1);
+    EXPECT_EQ(menu.list_top, stock.item_num - SHOP_LIST_LINE); // And at the bottom, where it moves nothing.
+    EXPECT_EQ(menu.list_pos, stock.item_num - 1);
+    EXPECT_EQ(keys.CheckLRKey(), 0);
+}
+
+TEST_F(ShopMouse, WheelScrollsTheBagARowAndTakesTheCellThatSettlesUnderThePointer) {
+    const auto saved_manner = MenuItemBrdCalcManner;
+    MenuItemBrdCalcManner = MENU_ITEM_BRD_CALC_EASE;
+    const int count = GetNowBagMax(ITEM_BOARD_MAIN);
+    ASSERT_GT(count, 30);
+    MenuItemBrdUnderBrdPosXY[1] = 66; // The board's resting origin at top line 0.
+    At(300, 80);
     EXPECT_EQ(menu.key_arg_no, SHOP_MENU_MODE_BAG);
-    MenuItemBrdKey(keys.CheckLRKey(), &menu.bag_pos, &menu.bag_top, ITEM_BOARD_MAIN);
-    EXPECT_EQ(menu.bag_pos, 30);
+    EXPECT_EQ(menu.bag_pos, 1);
+    // The pointer stays on the top row while the wheel turns.
+    At(300, 80, 0, -1);
     EXPECT_EQ(menu.bag_top, 1);
+    EXPECT_EQ(menu.bag_pos, 7);
+    EXPECT_EQ(keys.CheckLRKey(), 0);
+    EXPECT_FLOAT_EQ(MenuItemBrdUnderBrdPosXY[1], 66); // Not snapped by the mouse.
+    MenuItemBrdKey(keys.CheckLRKey(), &menu.bag_pos, &menu.bag_top, ITEM_BOARD_MAIN);
+    EXPECT_EQ(menu.bag_top, 1);
+    EXPECT_EQ(menu.bag_pos, 7);
+    Func_MenuItemBrdPosStep(menu.bag_top);
+    EXPECT_LT(MenuItemBrdUnderBrdPosXY[1], 66); // The retail board eases like a D-pad scroll.
+    EXPECT_GT(MenuItemBrdUnderBrdPosXY[1], 16);
+    MenuItemBrdUnderBrdPosXY[1] = 50;
+    At(301, 62); // Cell 1 is still drawn here, sliding out.
+    EXPECT_EQ(menu.bag_pos, 7);
+    At(341, 110);
+    EXPECT_EQ(menu.bag_pos, 8);
+    At(341, 110, 0, -2);
+    EXPECT_EQ(menu.bag_top, 3);
+    EXPECT_EQ(menu.bag_pos, 20);
+    At(341, 110, 0, 9);
+    EXPECT_EQ(menu.bag_top, 0);
+    EXPECT_EQ(menu.bag_pos, 2);
+    MenuItemBrdCalcManner = saved_manner;
+}
+
+TEST_F(ShopMouse, WheelRoutesToThePaneUnderThePointer) {
+    menu.key_arg_no = SHOP_MENU_MODE_BAG;
+    At(60, 100, 0, -1);
+    EXPECT_EQ(menu.key_arg_no, SHOP_MENU_MODE_BUY_LIST);
+    EXPECT_EQ(menu.list_top, 1);
+    At(300, 80, 0, -1);
+    EXPECT_EQ(menu.key_arg_no, SHOP_MENU_MODE_BAG);
+    EXPECT_EQ(menu.bag_top, 1);
+    EXPECT_EQ(menu.list_top, 1);
     At(510, 470, 0, -1);
+    EXPECT_EQ(menu.bag_top, 1);
     EXPECT_EQ(MenuMouseButtons(), 0);
 }
 
-TEST_F(ShopMouse, HoverTracksAnimatedListAndGridOrigins) {
-    menu.list_top = 2;
-    boards[2].y = -26;
+TEST_F(ShopMouse, WheelOverAListThatFitsMovesItsCursorThroughRetailKeys) {
+    stock.item_num = 4;
     At(60, 100);
-    EXPECT_EQ(menu.list_pos, 1); // Actual drawn row during the scroll, not the target top.
-    MenuItemBrdUnderBrdPosXY[1] = 10;
+    At(60, 100, 0, -1);
+    EXPECT_EQ(menu.list_top, 0);
+    EXPECT_EQ(keys.CheckLRKey(), MENU_SELECT_KEY_DOWN);
+    MenuListKeyCheck(keys.select_key, &menu.list_pos, &menu.list_top, stock.item_num, SHOP_LIST_LINE, 0, 0);
+    EXPECT_EQ(menu.list_pos, 1);
+}
+
+TEST_F(ShopMouse, WheelOverAnEmptyGoodsListKeepsTheBagInFront) {
+    // Retail moves to the bag when the stock runs out (an exhausted Donny reward list) and will not return.
+    stock.item_num = 0;
+    menu.key_arg_no = SHOP_MENU_MODE_BAG;
+    menu.bag_pos = 7;
+    menu.list_pos = menu.list_top = 0;
+    At(60, 100);
+    for (float wheel : {-1.0f, 1.0f, -1.0f}) {
+        At(60, 100, 0, wheel);
+        EXPECT_EQ(menu.key_arg_no, SHOP_MENU_MODE_BAG);
+        EXPECT_EQ(menu.bag_pos, 7);
+        EXPECT_EQ(menu.list_pos, 0);
+        EXPECT_EQ(menu.list_top, 0);
+        EXPECT_EQ(MenuMouseButtons(), 0);
+        EXPECT_EQ(keys.CheckLRKey(), 0);
+    }
+    At(60, 150, 1);
+    EXPECT_EQ(menu.key_arg_no, SHOP_MENU_MODE_BAG);
+    EXPECT_EQ(MenuMouseButtons(), 0);
+}
+
+TEST_F(ShopMouse, ClickWithAWheelNotchConfirmsTheRowItWasPressedOn) {
+    At(60, 150);
+    At(60, 150, 1, -1);
+    EXPECT_EQ(menu.list_top, 0);
+    EXPECT_EQ(menu.list_pos, 1);
+    EXPECT_EQ(MenuMouseButtons(), PAD_CROSS);
+}
+
+TEST_F(ShopMouse, CursorMovesSoundOnceAndSynthesizedKeysLeaveTheSoundToRetail) {
+    const int sounds = MenuMouseCursorSounds();
+    At(60, 150);
+    EXPECT_EQ(menu.list_pos, 1);
+    EXPECT_EQ(MenuMouseCursorSounds(), sounds + 1);
+    At(61, 150); // The same row.
+    EXPECT_EQ(MenuMouseCursorSounds(), sounds + 1);
     At(320, 170);
-    EXPECT_EQ(menu.bag_pos, 19);
+    EXPECT_EQ(menu.key_arg_no, SHOP_MENU_MODE_BAG);
+    EXPECT_EQ(MenuMouseCursorSounds(), sounds + 2);
+    At(320, 170); // Holding still.
+    EXPECT_EQ(MenuMouseCursorSounds(), sounds + 2);
+    At(320, 170, 0, -1);
+    EXPECT_EQ(menu.bag_pos, 19); // A scroll that brings another cell under the pointer.
+    EXPECT_EQ(MenuMouseCursorSounds(), sounds + 3);
+    // A notch over a list that fits presses Down, and the retail key step sounds the move.
+    stock.item_num = 4;
+    At(60, 150, 0, -1);
+    EXPECT_EQ(menu.key_arg_no, SHOP_MENU_MODE_BUY_LIST);
+    EXPECT_EQ(keys.CheckLRKey(), MENU_SELECT_KEY_DOWN);
+    EXPECT_EQ(MenuMouseCursorSounds(), sounds + 3);
+    menu.key_arg_no = SHOP_MENU_MODE_BUY_NUM;
+    At(250, 210);
+    EXPECT_EQ(menu.num_cursor, 1);
+    EXPECT_EQ(MenuMouseCursorSounds(), sounds + 4);
+}
+
+TEST_F(ShopMouse, WheelIntoAShortGoodsListSoundsOncePerChangeEvenAtItsEnds) {
+    stock.item_num = 4;
+    Step(60, 100); // Onto the list's first row.
+    ASSERT_EQ(menu.key_arg_no, SHOP_MENU_MODE_BUY_LIST);
+    ASSERT_EQ(menu.list_pos, 0);
+    // Back to the bag with the keys; Up then switches to the list but stops at its first entry.
+    menu.key_arg_no = SHOP_MENU_MODE_BAG;
+    int sounds = MenuCursorSounds();
+    Step(60, 100, 0, 1);
+    EXPECT_EQ(menu.key_arg_no, SHOP_MENU_MODE_BUY_LIST);
+    EXPECT_EQ(menu.list_pos, 0);
+    EXPECT_EQ(MenuCursorSounds(), sounds + 1);
+    // Down switches and moves: retail's one sound.
+    menu.key_arg_no = SHOP_MENU_MODE_BAG;
+    Step(60, 100, 0, -1);
+    EXPECT_EQ(menu.list_pos, 1);
+    EXPECT_EQ(MenuCursorSounds(), sounds + 2);
+    Step(60, 100, 0, -1);
+    Step(60, 100, 0, -1);
+    EXPECT_EQ(menu.list_pos, 3);
+    EXPECT_EQ(MenuCursorSounds(), sounds + 4);
+    // At the last entry nothing changes and nothing sounds.
+    Step(60, 100, 0, -1);
+    EXPECT_EQ(menu.list_pos, 3);
+    EXPECT_EQ(MenuCursorSounds(), sounds + 4);
+    sounds = MenuCursorSounds();
+    // A scroll pane switch at the long list's end sounds once too.
+    stock.item_num = 20;
+    menu.key_arg_no = SHOP_MENU_MODE_BAG;
+    menu.list_pos = menu.list_top = 0;
+    Step(60, 100, 0, 1);
+    EXPECT_EQ(menu.key_arg_no, SHOP_MENU_MODE_BUY_LIST);
+    EXPECT_EQ(menu.list_top, 0);
+    EXPECT_EQ(MenuCursorSounds(), sounds + 1);
+}
+
+TEST_F(ShopMouse, QuantityWheelFromQuitSoundsOnceEvenAtEachLimit) {
+    for (int mode : {SHOP_MENU_MODE_BUY_NUM, SHOP_MENU_MODE_SELL_NUM}) {
+        menu.key_arg_no = mode;
+        menu.num_max = 10;
+        int sounds = MenuCursorSounds();
+        // Quit to the number, whose quantity retail clamps back: the cursor change still sounds, once.
+        menu.num = 1;
+        menu.num_cursor = 1;
+        Step(160, 210, 0, -1);
+        EXPECT_EQ(menu.num_cursor, 0);
+        EXPECT_EQ(menu.num, 1);
+        EXPECT_EQ(MenuCursorSounds(), sounds + 1);
+        menu.num = 10;
+        menu.num_cursor = 1;
+        Step(160, 210, 0, 1);
+        EXPECT_EQ(menu.num, 10);
+        EXPECT_EQ(MenuCursorSounds(), sounds + 2);
+        // Already on the number at a limit: nothing changes.
+        Step(160, 210, 0, 1);
+        EXPECT_EQ(MenuCursorSounds(), sounds + 2);
+        // A quantity that moves as the cursor leaves Quit: retail's one sound.
+        menu.num = 5;
+        menu.num_cursor = 1;
+        Step(160, 210, 0, 1);
+        EXPECT_EQ(menu.num_cursor, 0);
+        EXPECT_EQ(menu.num, 6);
+        EXPECT_EQ(MenuCursorSounds(), sounds + 3);
+        Step(160, 210, 0, -1);
+        EXPECT_EQ(menu.num, 5);
+        EXPECT_EQ(MenuCursorSounds(), sounds + 4);
+    }
 }
 
 TEST_F(ShopMouse, QuantityWheelUsesRetailDirectionsAtBothLimitsInBuyAndSell) {

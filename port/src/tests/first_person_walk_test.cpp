@@ -20,7 +20,6 @@
 #include "stubs/photo.hpp"
 #include "userdata.hpp"
 
-extern sceVu0FVECTOR PortTownSavedEye asm("EditCtrl_SavedEye");
 extern sceVu0FVECTOR PortDungeonSavedEye asm("DngMain_SavedEye");
 extern int           PortTownEyeInitialized asm("EditCtrl_EyeInitialized");
 extern int           PortDungeonEyeInitialized asm("DngMain_EyeInitialized");
@@ -72,7 +71,8 @@ struct RestoreFirstPersonState {
 
 TEST(FirstPersonWalk, AcceptedDisplacementRestoresThirdPersonEyeAtNewPlayerPosition) {
     RestoreFirstPersonState restore;
-    const float             before[] = {10, 20, 30, 1}, after[] = {310, 5, -70, 1};
+    const float             before[] = {10, 20, 30, 1};
+    const float             after[] = {310, 5, -70, 1};
     for (bool dungeon : {false, true}) {
         CScene         scene;
         CCameraControl camera;
@@ -111,7 +111,7 @@ TEST(FirstPersonWalk, AirborneContinuationKeepsFreshMouseLookAndLocomotion) {
 
     class EmptyMap : public CMap {
     public:
-        int GetColPoly(CCPoly *, mgVu0FBOX &, int) override { return 0; }
+        int GetColPoly(CCPoly * /*polys*/, mgVu0FBOX & /*box*/, int /*max*/) override { return 0; }
     } map;
 
     CScene           scene;
@@ -150,7 +150,8 @@ TEST(FirstPersonWalk, AirborneContinuationKeepsFreshMouseLookAndLocomotion) {
     camera.SetPos(0, 128, 0);
     camera.SetRef(0, 128, 10);
     const auto  old_battle = BattleParamater;
-    const float old_yaw = viewAngleH__2, old_pitch = viewAngleV__2;
+    const float old_yaw = viewAngleH__2;
+    const float old_pitch = viewAngleV__2;
     InputResetBindings();
     InputScript script;
     std::string error;
@@ -159,14 +160,17 @@ TEST(FirstPersonWalk, AirborneContinuationKeepsFreshMouseLookAndLocomotion) {
     viewAngleH__2 = viewAngleV__2 = 0;
     for (int i = 0; i < 3; ++i) {
         InputLatchPad(0);
-        const float x = chara.position[0], yaw = viewAngleH__2, pitch = viewAngleV__2;
+        const float x = chara.position[0];
+        const float yaw = viewAngleH__2;
+        const float pitch = viewAngleV__2;
         camera.Step(1);
         EXPECT_EQ(chara.move_check.landed, 0);
         EXPECT_EQ(chara.menu_flag, 0);
         EXPECT_GT(chara.position[0], x);
         EXPECT_LT(viewAngleH__2, yaw);
         EXPECT_GT(viewAngleV__2, pitch);
-        const float moved = chara.position[0], turned = viewAngleH__2;
+        const float moved = chara.position[0];
+        const float turned = viewAngleH__2;
         camera.Step(1);
         EXPECT_FLOAT_EQ(chara.position[0], moved);
         EXPECT_FLOAT_EQ(viewAngleH__2, turned);
@@ -190,11 +194,11 @@ TEST(FirstPersonWalk, ViewRelativeForwardBackAndStrafePreserveMagnitude) {
     for (float heading : {0.0f, 0.7f, -1.3f, std::numbers::pi_v<float>}) {
         for (float angle : {0.0f, 1.0f, -2.0f}) {
             for (auto key : {
-                     InputKeyboardMovement{0,  -1},
-                     {0,  1 },
-                     {1,  0 },
-                     {-1, 0 },
-                     {1,  -1}
+                     InputKeyboardMovement{.x = 0,  .y = -1},
+                     {.x = 0,  .y = 1 },
+                     {.x = 1,  .y = 0 },
+                     {.x = -1, .y = 0 },
+                     {.x = 1,  .y = -1}
             }) {
                 const auto  stick = FirstPersonWalkStick(key, heading, angle);
                 const float x = stick.x * std::cos(angle) + stick.y * std::sin(angle);
@@ -206,7 +210,7 @@ TEST(FirstPersonWalk, ViewRelativeForwardBackAndStrafePreserveMagnitude) {
             }
         }
     }
-    const auto invalid = FirstPersonWalkStick({0, -1}, std::numeric_limits<float>::infinity(), 0);
+    const auto invalid = FirstPersonWalkStick({.x = 0, .y = -1}, std::numeric_limits<float>::infinity(), 0);
     EXPECT_EQ(invalid.x, 0);
     EXPECT_EQ(invalid.y, 0);
 }
@@ -323,9 +327,9 @@ TEST(FirstPersonWalk, DungeonGatesPhotoRidepodPauseEventsAndActions) {
     class TouchMap : public CMap {
     public:
         bool       touch = false;
-        CFuncPoint point{};
+        CFuncPoint point;
 
-        CFuncPoint *GetEvent(float *, int kind, MapEventInfo *info) override {
+        CFuncPoint *GetEvent(float * /*pos*/, int kind, MapEventInfo *info) override {
             *info = {};
             return touch && kind == MAP_EVENT_CHECK_TOUCH ? &point : nullptr;
         }
@@ -418,9 +422,11 @@ TEST(FirstPersonWalk, TownLocomotionAirborneAndLandingKeepFreshMouseLook) {
     mgFrameRate = 2;
     auto        save = std::make_unique<CSaveData>();
     auto       *old_save = PortActiveSaveData;
-    const int   old_fall = PortTownFallFlag, old_count = PortTownMotionCount;
+    const int   old_fall = PortTownFallFlag;
+    const int   old_count = PortTownMotionCount;
     const auto  old_motion = PortTownMotionMode;
-    const float old_heading = PortEditEyeHeading, old_tilt = PortEditEyeTilt;
+    const float old_heading = PortEditEyeHeading;
+    const float old_tilt = PortEditEyeTilt;
     PortActiveSaveData = save.get();
     auto          &scene = *GetMainScene();
     CCharacter2    chara;
@@ -451,7 +457,8 @@ TEST(FirstPersonWalk, TownLocomotionAirborneAndLandingKeepFreshMouseLook) {
     CPadControl pad{};
     for (int tick = 0; tick < 3; ++tick) {
         InputLatchPad(0);
-        const float y = chara.position[1], heading = PortEditEyeHeading;
+        const float y = chara.position[1];
+        const float heading = PortEditEyeHeading;
         EditControl(&scene, &pad);
         EXPECT_LT(chara.position[1], y);
         EXPECT_GT(PortTownFallFlag, 0);
@@ -545,7 +552,7 @@ TEST(FirstPersonWalk, TownReleasedWalkFallsLandsAndRestoresFollowOffset) {
 
     class FloorMap : public CMap {
     public:
-        int GetColPoly(CCPoly *out, mgVu0FBOX &, int capacity) override {
+        int GetColPoly(CCPoly *out, mgVu0FBOX & /*box*/, int capacity) override {
             if (capacity < 1) {
                 return 0;
             }

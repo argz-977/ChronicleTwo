@@ -15,7 +15,9 @@ TEST(ThunderVector, FourBandMapUsesTheCompleteLightingOutput) {
     scene->map[0].status = SCENE_DATA_ASSIGNED;
     std::strcpy(scene->map[0].name, "s51");
     scene->map[0].map = map.get();
+    map->map_info.Initialize();
     map->map_info.time_light_num = 4;
+    map->place_parts_num = 0;
     InitS51Thunder();
     S51Thunder(scene.get());
     EXPECT_EQ(map->map_info.time_light_num, 4);

@@ -1,6 +1,8 @@
 #include <algorithm>
+#include <cmath>
 #include <format>
 #include <string>
+#include <utility>
 
 #include "font.hpp"
 #include "mainloop.hpp"
@@ -12,13 +14,33 @@
 namespace options {
 namespace {
 
+// The fitted view this frame's entry or page draws through. Layout and text measurement stay in
+// page units; DrawScaledText and DrawScaledFill apply the view, once, as they draw.
+View g_view;
+
+// Font sizes round down, so scaled text stays inside the width it was measured against.
+int FontSize(int size) { return std::max(1, static_cast<int>(size * g_view.scale)); }
+
+void DrawScaledText(CFont &font, std::string &text, int x, int y, int size) {
+    font.SetDrawSize(FontSize(size), FontSize(size + 4));
+    font.SetClearance(FontSize(size), FontSize(size + 5));
+    const Point at = g_view.ToUi({.x = static_cast<float>(x), .y = static_cast<float>(y)});
+    font.DrawDirect(text.data(), static_cast<int>(std::lround(at.x)), static_cast<int>(std::lround(at.y)));
+}
+
+void DrawScaledFill(int x, int y, int w, int h, int alpha, int r, int g, int b) {
+    const Point at = g_view.ToUi({.x = static_cast<float>(x), .y = static_cast<float>(y)});
+    DrawMenuFillBox(at.x, at.y, w * g_view.scale, h * g_view.scale, alpha, r, g, b);
+}
+
 void Text(std::string text, int x, int y, int width, bool gold = false, int size = 16) {
     CFont font;
     font.SetDrawSize(size, size + 4);
     font.SetClearance(size, size + 5);
     font.SetFuchi(FUCHI_SHADOW_BLACK);
     font.SetColor(gold ? 128 : 118, gold ? 108 : 118, gold ? 64 : 118, 128);
-    int w = 0, h = 0;
+    int w = 0;
+    int h = 0;
     font.CalcDrawWH(text.data(), &w, &h);
     // Keep both custom values and lists of key bindings inside their own column.
     if (w > width) {
@@ -29,13 +51,10 @@ void Text(std::string text, int x, int y, int width, bool gold = false, int size
         }
         text += "...";
     }
-    font.DrawDirect(text.data(), x, y);
+    DrawScaledText(font, text, x, y, size);
 }
 
-void Fill(int x, int y, int w, int h, int r, int g, int b) {
-    DrawMenuFillBox(static_cast<float>(x), static_cast<float>(y), static_cast<float>(w), static_cast<float>(h),
-                    128, r, g, b);
-}
+void Fill(int x, int y, int w, int h, int r, int g, int b) { DrawScaledFill(x, y, w, h, 128, r, g, b); }
 
 void Plate(int x, int y, int width, int height, bool selected) {
     Fill(x, y, width, height, selected ? 108 : 65, selected ? 83 : 48, selected ? 38 : 28);
@@ -43,6 +62,12 @@ void Plate(int x, int y, int width, int height, bool selected) {
     if (selected) {
         Fill(x + 2, y + height - 2, width - 4, 1, 124, 106, 66);
     }
+}
+
+// The page's ground over retail's Options contents.
+void Backdrop() {
+    Fill(72, 90, 366, 236, 18, 17, 16);
+    Fill(48, 386, 420, 60, 18, 17, 16);
 }
 
 void Help(const std::string &help) {
@@ -62,11 +87,18 @@ void Draw() {
     const auto &config = ConfigGet();
     const auto  point = PointerPosition();
     const auto  hit = Pointing() ? HitTest(g_screen, point.x, point.y) : Hit{};
+    g_view = CurrentView(g_screen);
+    if (g_screen.open && g_view.scale < 1) {
+        // Drawn smaller than the UI scale, the page still covers retail's contents at the UI's size.
+        const View page = std::exchange(g_view, View{});
+        Backdrop();
+        g_view = page;
+    }
     if (!g_screen.open) {
         Plate(284, 51, 160, 25, hit.kind == HitKind::Entry);
         Text(ButtonName("select", config) + ": PC SETTINGS", 291, 54, 147, true, 13);
     } else {
-        Fill(72, 90, 366, 236, 18, 17, 16);
+        Backdrop();
         // The original scrollbar remains a useful track, with this page's own thumb and count.
         Fill(446, 98, 5, 225, 16, 13, 9);
         const auto &page = Pages()[g_screen.page];
@@ -78,11 +110,11 @@ void Draw() {
         Fill(447, thumb_y, 3, thumb_h, 95, 67, 35);
         Text("PC SETTINGS", 83, 55, 190, true, 18);
         Text(std::format("{} / {}", g_screen.page + 1, Pages().size()), 385, 56, 60, false, 14);
-        for (int p = 0; p < 4; ++p) {
-            const int  x = kLeft + p * 88;
+        for (int p = 0; p < kPages; ++p) {
+            const int  x = kLeft + p * kTabStep;
             const bool selected = p == g_screen.page;
-            Plate(x, 91, 85, 23, selected || (hit.kind == HitKind::Tab && hit.index == p));
-            Text(Pages()[p].name, x + 7, 93, 74, selected, 14);
+            Plate(x, 91, kTabStep - 3, 23, selected || (hit.kind == HitKind::Tab && hit.index == p));
+            Text(Pages()[p].name, x + 4, 93, kTabStep - 9, selected, 14);
         }
         for (int row = first; row < std::min(count, first + kVisibleRows); ++row) {
             int         y = kRowY + (row - first) * kRowStep;
@@ -105,13 +137,12 @@ void Draw() {
              332, 314, 103, false, 12);
         Plate(kLeft, 343, 105, 27, hit.kind == HitKind::Back);
         Text(g_screen.binding >= 0 ? "Cancel capture" : "Back to Options", kLeft + 5, 348, 96, false, 12);
-        if (g_screen.page == 3 && g_screen.binding < 0) {
+        if (g_screen.page == kBindingsPage && g_screen.binding < 0) {
             Plate(272, 343, kRight - 272, 27, hit.kind == HitKind::ResetBinding);
             Text(ButtonName("square", config) + ": Restore binding", 278, 348, kRight - 284, false, 12);
         }
-        Fill(48, 386, 420, 60, 18, 17, 16);
         if (g_screen.save_failed) {
-            Help("Could not save config.json. Settings work this session.\nCheck the save folder; change a setting to retry.");
+            Help("Could not save config.json. Settings work this session.\nCheck the folder above the saves; change a setting to retry.");
         } else if (DisplayGetWarning() != DisplayWarning::None) {
             Help("The display could not apply that mode.\nThe setting shows the mode the window kept.");
         } else if (g_screen.binding >= 0) {
@@ -119,8 +150,8 @@ void Draw() {
         } else {
             Help(page.rows[g_screen.row[g_screen.page]].help);
         }
-        const auto        confirm = LanguageCode > 0 ? "cross" : "circle";
-        const auto        cancel = LanguageCode > 0 ? "circle" : "cross";
+        const auto *const confirm = LanguageCode > 0 ? "cross" : "circle";
+        const auto *const cancel = LanguageCode > 0 ? "circle" : "cross";
         const std::string shortcuts = g_screen.binding >= 0 ? "Escape: Cancel capture" : ButtonName("l1", config) + "/" + ButtonName("r1", config) + ": Page   " + ButtonName(confirm, config) + ": Change   " + ButtonName(cancel, config) + ": Back";
         Text(shortcuts, 53, 432, 404, true, 12);
     }

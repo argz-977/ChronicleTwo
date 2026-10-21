@@ -21,28 +21,26 @@ SdwScreenVertex Project(const Mat4& cs, const Vec4& v) {
     const Vec4 p = Mul(cs, v);
     const Vec4 s = p * (1.0f / p.w);
     return {
-        Ftoi4(s.x),
-        Ftoi4(s.y),
-        Ftoi4(s.z) >> 4,
-        static_cast<uint32_t>(Ftoi4(s.w) >> 4) & 0xFFu,
-        s,
+        .x = Ftoi4(s.x),
+        .y = Ftoi4(s.y),
+        .z = Ftoi4(s.z) >> 4,
+        .f = static_cast<uint32_t>(Ftoi4(s.w) >> 4) & 0xFFu,
+        .s = s,
     };
 }
 
 }  // namespace
 
 SdwLight SdwPrepare(const SdwParams& p) {
-    const Vec4 a{Dot3(p.object[0], p.light), Dot3(p.object[1], p.light),
-                 Dot3(p.object[2], p.light), 0.0f};
+    const Vec4  a{.x = Dot3(p.object[0], p.light), .y = Dot3(p.object[1], p.light), .z = Dot3(p.object[2], p.light), .w = 0.0f};
     const float len = std::sqrt(Dot3(a, a));
-    const Vec4 a_hat{a.x / len, a.y / len, a.z / len, 0.0f};
+    const Vec4  a_hat{.x = a.x / len, .y = a.y / len, .z = a.z / len, .w = 0.0f};
 
-    const Vec4 d{kSdwLightScale * a_hat.x, kSdwLightScale * a_hat.y, kSdwLightScale * a_hat.z,
-                 0.0f};
+    const Vec4 d{.x = kSdwLightScale * a_hat.x, .y = kSdwLightScale * a_hat.y, .z = kSdwLightScale * a_hat.z, .w = 0.0f};
     const Vec4 lc = p.vc.q[0] * d.x + p.vc.q[1] * d.y + p.vc.q[2] * d.z;
 
     const float det = Dot3(Cross3(p.object[0], p.object[1]), p.object[2]);
-    return {a_hat, lc, det < 0.0f};
+    return {.a_hat = a_hat, .lc = lc, .mirrored = det < 0.0f};
 }
 
 SdwTriangle SdwExtrude(const SdwParams& p, const SdwLight& light, Vec4 v0, Vec4 v1, Vec4 v2) {
@@ -66,8 +64,8 @@ SdwTriangle SdwExtrude(const SdwParams& p, const SdwLight& light, Vec4 v0, Vec4 
         }
     }
 
-    tri.e1 = {tri.c[1].x - tri.c[0].x, tri.c[1].y - tri.c[0].y, tri.c[1].z - tri.c[0].z, 0.0f};
-    tri.e2 = {tri.c[2].x - tri.c[0].x, tri.c[2].y - tri.c[0].y, tri.c[2].z - tri.c[0].z, 0.0f};
+    tri.e1 = {.x = tri.c[1].x - tri.c[0].x, .y = tri.c[1].y - tri.c[0].y, .z = tri.c[1].z - tri.c[0].z, .w = 0.0f};
+    tri.e2 = {.x = tri.c[2].x - tri.c[0].x, .y = tri.c[2].y - tri.c[0].y, .z = tri.c[2].z - tri.c[0].z, .w = 0.0f};
     tri.n = Cross3(tri.e2, tri.e1);
     tri.q = Dot3(tri.n, light.lc);
     if (std::fabs(tri.q) <= kSdwGrazingEpsilon) {
@@ -120,27 +118,27 @@ std::vector<SdwKick> SdwKickOrder(const std::array<bool, kSdwQuadCount>& back) {
     }
 
     std::vector<SdwKick> kicks;
-    kicks.push_back({SdwKickKind::AlphaAdd, 0});
+    kicks.push_back({.kind = SdwKickKind::AlphaAdd, .quad = 0});
     // Spec 6.5: back quads are never kicked when a triangle has no front quad.
     if (front_count == 0) {
         return kicks;
     }
     for (uint32_t g = 0; g < kSdwQuadCount; ++g) {
         if (!back[g]) {
-            kicks.push_back({SdwKickKind::Quad, static_cast<uint8_t>(g)});
+            kicks.push_back({.kind = SdwKickKind::Quad, .quad = static_cast<uint8_t>(g)});
         }
     }
-    kicks.push_back({SdwKickKind::AlphaAdd, 0});
+    kicks.push_back({.kind = SdwKickKind::AlphaAdd, .quad = 0});
     if (back_count == 0) {
         return kicks;
     }
-    kicks.push_back({SdwKickKind::AlphaSub, 0});
+    kicks.push_back({.kind = SdwKickKind::AlphaSub, .quad = 0});
     for (uint32_t g = 0; g < kSdwQuadCount; ++g) {
         if (back[g]) {
-            kicks.push_back({SdwKickKind::Quad, static_cast<uint8_t>(g)});
+            kicks.push_back({.kind = SdwKickKind::Quad, .quad = static_cast<uint8_t>(g)});
         }
     }
-    kicks.push_back({SdwKickKind::AlphaSub, 0});
+    kicks.push_back({.kind = SdwKickKind::AlphaSub, .quad = 0});
     return kicks;
 }
 

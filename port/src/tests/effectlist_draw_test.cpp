@@ -1,7 +1,5 @@
 #include <gtest/gtest.h>
 
-#include <array>
-#include <cstdint>
 #include <span>
 #include <vector>
 
@@ -31,7 +29,9 @@ public:
         prim.write = nullptr;
         mgPortSetPrimSink([this](gfx::Primitive primitive, std::span<const gfx::Vertex2D> vertices,
                                  const gfx::TextureBinding &, const gfx::DrawState &) {
-            batches.push_back({primitive, {vertices.begin(), vertices.end()}});
+            batches.push_back({
+                .primitive = primitive, .vertices = {vertices.begin(), vertices.end()}
+            });
         });
     }
 
@@ -46,7 +46,7 @@ public:
     Harness(const Harness &) = delete;
     Harness &operator=(const Harness &) = delete;
 
-    void Screen(int width, int height, int offx, int offy) {
+    static void Screen(int width, int height, int offx, int offy) {
         mgScreenWidth = width;
         mgScreenHeight = height;
         mgScreenOffx = offx;
@@ -71,7 +71,7 @@ private:
 
 TEST(EffectListDraw, SpriteFadeIsOneBatchOfScreenQuads) {
     Harness h;
-    h.Screen(512, 480, 77, 13);
+    Harness::Screen(512, 480, 77, 13);
     h.prim.Begin2();
     h.prim.Color(10, 20, 30, 40);
     DivSpriteScreen(h.prim);
@@ -104,7 +104,7 @@ TEST(EffectListDraw, SpriteFadeIsOneBatchOfScreenQuads) {
 
 TEST(EffectListDraw, EdgeStripAlternatesLeftAndRightEdges) {
     Harness h;
-    h.Screen(512, 480, 77, 13);
+    Harness::Screen(512, 480, 77, 13);
     h.prim.Begin2();
     DivSpriteScreen(h.prim, 100, 300, 0);
     h.prim.End2();
@@ -127,7 +127,7 @@ TEST(EffectListDraw, EdgeStripAlternatesLeftAndRightEdges) {
 
 TEST(EffectListDraw, JaggedStripOffsetsLeftEdgeByRowParity) {
     Harness h;
-    h.Screen(512, 480, 77, 13);
+    Harness::Screen(512, 480, 77, 13);
     h.prim.Begin2();
     DivSpriteScreen(h.prim, 100, 300, 1);
     h.prim.End2();

@@ -21,6 +21,7 @@ struct Batch {
     std::vector<gfx::Vertex2D> vertices;
     gfx::TextureBinding        texture;
     gfx::DrawState             state;
+    gfx::Interp2D              tag{}; /**< Interpolation tag current at the draw; billboard rigs only. */
 };
 
 class SinkRig {
@@ -28,7 +29,10 @@ public:
     SinkRig() {
         mgPortSetPrimSink([this](gfx::Primitive primitive, std::span<const gfx::Vertex2D> vertices,
                                  const gfx::TextureBinding &texture, const gfx::DrawState &state) {
-            batches.push_back({primitive, {vertices.begin(), vertices.end()}, texture, state});
+            batches.push_back({
+                .primitive = primitive, .vertices = {vertices.begin(), vertices.end()},
+                     .texture = texture, .state = state
+            });
         });
     }
 
@@ -82,9 +86,11 @@ private:
 class GsReset {
 public:
     GsReset() = default;
+
     ~GsReset() {
         mgPortResetGs();
     }
+
     GsReset(const GsReset &) = delete;
     GsReset &operator=(const GsReset &) = delete;
 };
@@ -96,13 +102,13 @@ std::array<uint8_t, 4> Rgba(const gfx::Vertex2D &v) {
 } // namespace
 
 TEST(MgSprite, UntexturedSpriteSubmitsOneQuad) {
-    const int offset = 0x800;
+    const int         offset = 0x800;
     ScreenOffsetScope screen_offset(offset, offset);
-    sceVif1Packet vif_packet{};
-    VifPacketScope vif(&vif_packet);
-    SinkRig rig;
+    sceVif1Packet     vif_packet{};
+    VifPacketScope    vif(&vif_packet);
+    SinkRig           rig;
 
-    mgRENDER_INFO render_info{};
+    mgRENDER_INFO  render_info{};
     mgCDrawManager manager;
     manager.render_info = &render_info;
 
@@ -131,13 +137,13 @@ TEST(MgSprite, UntexturedSpriteSubmitsOneQuad) {
 }
 
 TEST(MgSprite, DrawSubmitsSameQuadAndWritesNoDmaChain) {
-    const int offset = 0x800;
+    const int         offset = 0x800;
     ScreenOffsetScope screen_offset(offset, offset);
-    sceVif1Packet vif_packet{};
-    VifPacketScope vif(&vif_packet);
-    SinkRig rig;
+    sceVif1Packet     vif_packet{};
+    VifPacketScope    vif(&vif_packet);
+    SinkRig           rig;
 
-    mgRENDER_INFO render_info{};
+    mgRENDER_INFO  render_info{};
     mgCDrawManager manager;
     manager.render_info = &render_info;
 
@@ -145,7 +151,7 @@ TEST(MgSprite, DrawSubmitsSameQuadAndWritesNoDmaChain) {
     sprite.screen.Set(16 * 10, 16 * 20, 16 * 42, 16 * 36);
     sprite.SetColor(1, 2, 3, 4);
 
-    u_int tag[8] = {0xDEADBEEF, 0xDEADBEEF, 0xDEADBEEF, 0xDEADBEEF, 0xDEADBEEF, 0xDEADBEEF, 0xDEADBEEF, 0xDEADBEEF};
+    u_int     tag[8] = {0xDEADBEEF, 0xDEADBEEF, 0xDEADBEEF, 0xDEADBEEF, 0xDEADBEEF, 0xDEADBEEF, 0xDEADBEEF, 0xDEADBEEF};
     const int qwords = sprite.Draw(tag, nullptr, &manager);
 
     EXPECT_EQ(qwords, 0);
@@ -158,7 +164,7 @@ TEST(MgSprite, DrawSubmitsSameQuadAndWritesNoDmaChain) {
 }
 
 TEST(MgSprite, PreSpriteSetScirorWritesScissorEdges) {
-    GsReset reset;
+    GsReset    reset;
     CPreSprite sprite;
     sprite.SetScirror(10, 20, 30, 40);
 
@@ -170,14 +176,14 @@ TEST(MgSprite, PreSpriteSetScirorWritesScissorEdges) {
 }
 
 TEST(MgSprite, PreSpriteSetAlphaBlendWritesAddEquation) {
-    GsReset reset;
+    GsReset    reset;
     CPreSprite sprite;
     sprite.SetAlphaBlend(2);
     EXPECT_EQ(mgPortGs().alpha, 0x48u);
 }
 
 TEST(MgSprite, PreSpriteSetAlphaBlendModeZeroWritesNothing) {
-    GsReset reset;
+    GsReset    reset;
     CPreSprite sprite;
     sprite.SetAlphaBlend(2);
     const uint64_t before = mgPortGs().alpha;
@@ -192,7 +198,10 @@ public:
     BillboardRig() {
         mgPortSet3DSpriteSink([this](gfx::Primitive primitive, std::span<const gfx::Vertex2D> vertices,
                                      const gfx::TextureBinding &texture, const gfx::DrawState &state) {
-            batches.push_back({primitive, {vertices.begin(), vertices.end()}, texture, state});
+            batches.push_back({
+                .primitive = primitive, .vertices = {vertices.begin(), vertices.end()},
+                     .texture = texture, .state = state, .tag = gfx::CurrentInterp2D()
+            });
         });
     }
 
@@ -228,7 +237,12 @@ void SetOriginCamera(mgRENDER_INFO &render_info, float depth_w, float near_dist,
     render_info.fog.b = 30;
 }
 
-float kIdentity[4][4] = {{1.0f, 0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f, 1.0f}};
+float kIdentity[4][4] = {
+    {1.0f, 0.0f, 0.0f, 0.0f},
+    {0.0f, 1.0f, 0.0f, 0.0f},
+    {0.0f, 0.0f, 1.0f, 0.0f},
+    {0.0f, 0.0f, 0.0f, 1.0f}
+};
 
 void AddBillboard(mgC3DSprite &sprite, float angle) {
     float pos[4] = {0.0f, 0.0f, 0.0f, 1.0f};
@@ -242,9 +256,9 @@ void AddBillboard(mgC3DSprite &sprite, float angle) {
 } // namespace
 
 TEST(MgSprite, SpriteAtOriginLandsAtCentre) {
-    const int offset = 0x800;
+    const int         offset = 0x800;
     ScreenOffsetScope screen_offset(offset, offset);
-    BillboardRig rig;
+    BillboardRig      rig;
 
     mgRENDER_INFO render_info{};
     SetOriginCamera(render_info, 4.0f, 1.0f, 200.0f);
@@ -282,9 +296,9 @@ TEST(MgSprite, SpriteAtOriginLandsAtCentre) {
 }
 
 TEST(MgSprite, RotatedModeEmitsTriangles) {
-    const int offset = 0x800;
+    const int         offset = 0x800;
     ScreenOffsetScope screen_offset(offset, offset);
-    BillboardRig rig;
+    BillboardRig      rig;
 
     mgRENDER_INFO render_info{};
     SetOriginCamera(render_info, 4.0f, 1.0f, 200.0f);
@@ -305,9 +319,9 @@ TEST(MgSprite, RotatedModeEmitsTriangles) {
 }
 
 TEST(MgSprite, FogColourZeroForAdditive) {
-    const int offset = 0x800;
+    const int         offset = 0x800;
     ScreenOffsetScope screen_offset(offset, offset);
-    BillboardRig rig;
+    BillboardRig      rig;
 
     mgRENDER_INFO render_info{};
     SetOriginCamera(render_info, 4.0f, 1.0f, 200.0f);
@@ -337,9 +351,9 @@ TEST(MgSprite, FogColourZeroForAdditive) {
 }
 
 TEST(MgSprite, FogColourKeptForOpaque) {
-    const int offset = 0x800;
+    const int         offset = 0x800;
     ScreenOffsetScope screen_offset(offset, offset);
-    BillboardRig rig;
+    BillboardRig      rig;
 
     mgRENDER_INFO render_info{};
     SetOriginCamera(render_info, 4.0f, 1.0f, 200.0f);
@@ -369,9 +383,9 @@ TEST(MgSprite, FogColourKeptForOpaque) {
 }
 
 TEST(MgSprite, BehindNearPlaneIsNotDrawn) {
-    const int offset = 0x800;
+    const int         offset = 0x800;
     ScreenOffsetScope screen_offset(offset, offset);
-    BillboardRig rig;
+    BillboardRig      rig;
 
     mgRENDER_INFO render_info{};
     SetOriginCamera(render_info, 0.5f, 1.0f, 200.0f);
@@ -400,4 +414,41 @@ TEST(MgSprite, DrawWithoutBuiltPacketSubmitsNothing) {
     mgC3DSprite sprite;
     EXPECT_EQ(sprite.Draw(nullptr, kIdentity, &manager), 0);
     EXPECT_TRUE(rig.batches.empty());
+}
+
+TEST(MgSprite, TaggedBatchDrawsUnderItsTagAndOthersUnderTheCurrentOne) {
+    ScreenOffsetScope screen_offset(0x800, 0x800);
+    BillboardRig      rig;
+
+    mgRENDER_INFO render_info{};
+    SetOriginCamera(render_info, 4.0f, 1.0f, 200.0f);
+    mgCDrawManager manager;
+    manager.render_info = &render_info;
+
+    const gfx::Interp2D own{.key = 73, .generation = 4, .world_corners = true, .teleport_distance = 50.0f};
+    mgC3DSprite         sprite;
+    sprite.BeginCreatePacket(MG_3DSPRITE_MODE_ROTATE, &manager);
+    mgPortTag3DSpriteBatch(&sprite, own); // No batch is open yet, so this tags nothing.
+    sprite.BeginCPSprite();
+    mgPortTag3DSpriteBatch(&sprite, own);
+    AddBillboard(sprite, 0.0f);
+    sprite.EndCPSprite();
+    sprite.BeginCPSprite();
+    AddBillboard(sprite, 0.5f);
+    sprite.EndCPSprite();
+    sprite.EndCreatePacket();
+    {
+        const gfx::Interp2DScope outer({.key = 9, .generation = 2});
+        sprite.Draw(nullptr, kIdentity, &manager);
+        EXPECT_EQ(gfx::CurrentInterp2D().key, 9u);
+    }
+
+    ASSERT_EQ(rig.batches.size(), 2u);
+    EXPECT_EQ(rig.batches[0].tag.key, 73u);
+    EXPECT_EQ(rig.batches[0].tag.generation, 4u);
+    EXPECT_TRUE(rig.batches[0].tag.world_corners);
+    EXPECT_EQ(rig.batches[0].tag.teleport_distance, 50.0f);
+    EXPECT_EQ(rig.batches[1].tag.key, 9u);
+    EXPECT_EQ(rig.batches[1].tag.generation, 2u);
+    EXPECT_FALSE(rig.batches[1].tag.world_corners);
 }

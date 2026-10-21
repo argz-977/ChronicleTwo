@@ -9,7 +9,7 @@
 namespace {
 
 void StoreLanes(u_long128 *&write, const int lanes[4]) {
-    if (write == NULL) {
+    if (write == nullptr) {
         return;
     }
 

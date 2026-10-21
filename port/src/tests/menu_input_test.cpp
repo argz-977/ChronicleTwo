@@ -261,7 +261,8 @@ TEST_F(MenuInput, FieldMovementKeysDoNotSuppressDpadRepeatOrSecondPadLock) {
 TEST_F(MenuInput, MouseMotionCannotReachMenuSticksOrRetailDirectionConversion) {
     GamePad__2.MenuModeOn(120);
     constexpr int          directions = PAD_UP | PAD_DOWN | PAD_LEFT | PAD_RIGHT;
-    const std::string_view x[] = {"MouseX"}, y[] = {"MouseY"};
+    const std::string_view x[] = {"MouseX"};
+    const std::string_view y[] = {"MouseY"};
     ASSERT_TRUE(InputBindKeys("lx", x));
     ASSERT_TRUE(InputBindKeys("ly", y));
     for (float motion : {-10000.0f, 10000.0f}) {

@@ -35,7 +35,7 @@ struct PlaneSpec {
 };
 
 PlaneSpec PlaneOf(int plane) {
-    return {kAxisOfPair[plane / 2], (plane % 2) == 0 ? -1.0f : 1.0f};
+    return {.axis = kAxisOfPair[plane / 2], .s = (plane % 2) == 0 ? -1.0f : 1.0f};
 }
 
 float Component(const Vec4& v, int axis) {
@@ -53,7 +53,7 @@ Prog0ClipVertex Intersect(const Prog0ClipVertex& cur, const Prog0ClipVertex& nxt
     const float dn = Component(nxt.pos, p.axis) - p.s * nxt.pos.w;
     const float t = std::fabs(dc / (dn - dc));
 
-    Prog0ClipVertex r;
+    Prog0ClipVertex r{};
     r.pos = cur.pos + (nxt.pos - cur.pos) * t;
     r.colour = cur.colour + (nxt.colour - cur.colour) * t;
     r.uv = cur.uv + (nxt.uv - cur.uv) * t;
@@ -117,7 +117,7 @@ int Prog0HeaderVariant(uint32_t type) {
 Prog0Header PackProg0Header(uint32_t type, uint32_t n, bool skinned) {
     const int variant = Prog0HeaderVariant(type);
     const auto& row = skinned ? kSkinnedCounts[variant] : kNonSkinnedCounts[variant];
-    return {row[0] * n, row[1] * n, row[2] * n, type};
+    return {.v_count = row[0] * n, .n_count = row[1] * n, .c_count = row[2] * n, .type = type};
 }
 
 Prog0Offsets Prog0InputOffsets(int tops, const Prog0Header& header) {
@@ -126,7 +126,7 @@ Prog0Offsets Prog0InputOffsets(int tops, const Prog0Header& header) {
     const int uv = normal + static_cast<int>(header.n_count);
     const int colour = uv + static_cast<int>(header.c_count);
     const int weight = colour + static_cast<int>(header.v_count);
-    return {v, normal, uv, colour, weight};
+    return {.v = v, .normal = normal, .uv = uv, .colour = colour, .weight = weight};
 }
 
 int Prog0BatchLimit(int vu1_offset, bool colour, bool skinned) {
@@ -220,8 +220,8 @@ Prog0ScreenVertex Prog0ToScreen(const Prog0ClipVertex& v, const Mat4& clip_scree
     const float q = 1.0f / s.w;
 
     Prog0ScreenVertex out{};
-    out.screen = {s.x * q, s.y * q, s.z * q, FogValue(fog, q)};
-    out.st = {v.uv.x * q, v.uv.y * q, v.uv.z * q, 0.0f};
+    out.screen = {.x = s.x * q, .y = s.y * q, .z = s.z * q, .w = FogValue(fog, q)};
+    out.st = {.x = v.uv.x * q, .y = v.uv.y * q, .z = v.uv.z * q, .w = 0.0f};
     out.rgbaq = {Ftoi0(v.colour.x), Ftoi0(v.colour.y), Ftoi0(v.colour.z), Ftoi0(v.colour.w)};
     return out;
 }
@@ -258,7 +258,7 @@ Prog0Facing Prog0ListFacing(const std::array<Vec4, 3>& v, const std::array<uint3
     const uint32_t in_tri = guard[0] & guard[1] & guard[2];
     const uint32_t sample = in_tri | Prog0OrientBit(v[0], v[1], v[2]);
     const bool keep = sample == (kGuardMask | (mirror & kOrient));
-    return {keep, keep ? -1 : 2};
+    return {.keep = keep, .adc_vertex = keep ? -1 : 2};
 }
 
 bool Prog0ClipFacingKeep(Vec4 p0, Vec4 p1, Vec4 p2, uint32_t mirror) {
@@ -289,7 +289,7 @@ std::vector<bool> Prog0StripAdc(std::span<const Vec4> screen, std::span<const ui
         const float cz = Cross3(carry.pos_prev1 - cur, carry.pos_prev2 - cur).z * parity;
         const uint32_t orient = cz < 0.0f ? kOrient : 0u;
         const bool window = carry.window.in_prev2 && carry.window.in_prev1 && in;
-        adc.push_back(!(window && orient == want));
+        adc.push_back(!window || orient != want);
 
         carry.window.in_prev2 = carry.window.in_prev1;
         carry.window.in_prev1 = in;
@@ -336,7 +336,7 @@ GsXyzf PackProg0Xyzf(Vec4 screen, float fog, bool adc) {
 }
 
 Vec4 GsToNdc(Vec4 screen, float half_width, float half_height) {
-    return {(screen.x - kGsCentre) / half_width, (screen.y - kGsCentre) / half_height, 0.0f, 1.0f};
+    return {.x = (screen.x - kGsCentre) / half_width, .y = (screen.y - kGsCentre) / half_height, .z = 0.0f, .w = 1.0f};
 }
 
 float GsZToDepth(uint32_t z24, float z_range) {

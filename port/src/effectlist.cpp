@@ -1,11 +1,19 @@
 #include "common.h"
 
 #include <algorithm>
+#include <cstring>
+#include <string_view>
 #include <vector>
 
+#include "asset_directory.hpp"
+#include "bounded_text.hpp"
+#include "dataread.hpp"
+#include "dataread_port.hpp"
+#include "effect.hpp"
 #include "effectlist.hpp"
 #include "mg_drawprim.hpp"
 #include "mg_drawprim_port.hpp"
+#include "mg_texture_port.hpp"
 #include "mglib.hpp"
 #include "mglib_port.hpp"
 
@@ -14,17 +22,20 @@ PORT_OVERRIDE void CFadeInOut::CaptureScreen() {
         return;
     }
 
-    // Capture the completed scene at this point in the stream. A CPU store followed by a
-    // pointer-only texture reload can keep an earlier scene even after its buffer changes.
+    // Blit on the GPU: a CPU store followed by a pointer-only texture reload can keep an earlier scene.
     const gfx::TextureHandle target = mgPortRenderTarget(cross_texture, true);
     if (target != gfx::kNullTexture) {
         gfx::BlitTexture(gfx::kPreviousFrame,
-                         gfx::Rect{0, 0, static_cast<int>(gfx::LogicalWidth()), static_cast<int>(gfx::LogicalHeight())},
-                         target, gfx::Rect{0, 0, cross_texture->width, cross_texture->height}, gfx::Filter::Nearest);
+                         gfx::Rect{.x = 0, .y = 0, .w = static_cast<int>(gfx::LogicalWidth()), .h = static_cast<int>(gfx::LogicalHeight())},
+                         target, gfx::Rect{.x = 0, .y = 0, .w = cross_texture->width, .h = cross_texture->height}, gfx::Filter::Nearest);
     }
 }
 
 namespace {
+
+u_int Quadwords(u_int bytes) {
+    return bytes % 16 ? bytes / 16 + 1 : bytes / 16;
+}
 
 gfx::Vertex2D EdgeVertex(const mgCDrawPrim &prim, float x, float y, const uint8_t rgba[4]) {
     return mgPortPrimVertex(prim, x, y, 0.0f, x, y, rgba, 0);
@@ -61,12 +72,12 @@ PORT_OVERRIDE void DivSpriteScreen(mgCDrawPrim &prim, int left, int right, int j
     uint8_t rgba[4];
     mgPortPrimColor(prim, rgba);
 
-    const int row_height = mgScreenHeight / 16;
-    const int edge_offset[2] = {-10, 10};
+    const int                  row_height = mgScreenHeight / 16;
+    const int                  edge_offset[2] = {-10, 10};
     std::vector<gfx::Vertex2D> strip;
 
     for (int row = 0; row < 17; row++) {
-        const float y = static_cast<float>(row * row_height);
+        const auto  y = static_cast<float>(row * row_height);
         const int   left_x = std::max(0, jagged_left ? left + edge_offset[row % 2] : left);
         const int   right_x = std::max(0, jagged_left ? right : right + edge_offset[row % 2]);
         strip.push_back(EdgeVertex(prim, static_cast<float>(left_x), y, rgba));
@@ -76,4 +87,46 @@ PORT_OVERRIDE void DivSpriteScreen(mgCDrawPrim &prim, int left, int right, int j
     std::vector<gfx::Vertex2D> triangles;
     mgPortStripTriangles(strip, triangles);
     mgPortPrimSubmit(prim, gfx::Primitive::Triangles, triangles);
+}
+
+PORT_OVERRIDE void CEffectList::LoadEFPFile(char *name, u_int *pack, int block, mgCMemory *stack) {
+    int    sizes[64];
+    u_int *files[64];
+    char  *names[64];
+
+    this->block = block;
+    this->pack = pack;
+    this->name = reinterpret_cast<char *>(stack->Alloc(Quadwords(strlen(name) + 1)));
+    strcpy(this->name, name);
+
+    std::vector<u_int *> texture_documents(AssetDirectoryCount(pack));
+    const int            texture_count = AssetDirectoryReadExtension(pack, "texture", texture_documents.data(),
+                                                                     static_cast<int>(texture_documents.size()), nullptr, nullptr);
+    for (int index = 0; index < texture_count; ++index) {
+        if (const auto path = DataReadBufferPath(texture_documents[index])) {
+            MgTextureEnterDocument(&mgTexManager, *path, block, nullptr, nullptr);
+        }
+    }
+
+    effect_num = AssetDirectoryReadExtension(pack, "em", files, 64, sizes, names);
+    managers = new (stack->Alloc(Quadwords(effect_num * sizeof(CEffectManager)) + 2)) CEffectManager[effect_num];
+    sprites = new (stack->Alloc(Quadwords(effect_num * sizeof(mgC3DSprite)) + 2)) mgC3DSprite[effect_num];
+
+    for (int i = 0; i < effect_num; i++) {
+        int particle_num = 0;
+        int ctrl_num = 0;
+        // The manager is named by the entry's base name, without its directory or extension.
+        std::string_view basename = bounded_text::View(names[i]);
+        basename.remove_prefix(std::min(basename.size(), basename.find_last_of("/\\") + 1));
+        basename = basename.substr(0, basename.find_last_of('.'));
+        auto *data = reinterpret_cast<char *>(files[i]);
+        managers[i].GetBufferNums(data, sizes[i], &particle_num, &ctrl_num);
+        auto *particles = new (stack->Alloc(Quadwords(particle_num * sizeof(CEffect)) + 2)) CEffect[particle_num];
+        auto *ctrls = new (stack->Alloc(Quadwords(ctrl_num * sizeof(CEffectCtrl)) + 2)) CEffectCtrl[ctrl_num];
+        managers[i].EntryEffCtrls(particles, particle_num, ctrls, ctrl_num);
+        managers[i].Initialize();
+        managers[i].Load(data, sizes[i]);
+        bounded_text::Copy(managers[i].name, basename);
+        managers[i].Run();
+    }
 }

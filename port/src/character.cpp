@@ -1,35 +1,49 @@
 #include "common.h"
 
+#include <cstdio>
+
 #include "character.hpp"
+#include "character_motion.hpp"
+#include "dataread_port.hpp"
+#include "log/log.hpp"
 #include "mg_texture.hpp"
 #include "mglib.hpp"
-#include "platform/texture_catalog.hpp"
-#include "texture_source.hpp"
+#include "platform/model_assets.hpp"
 
-namespace {
-
-void DeleteCatalogTextures(mgIMG_FILE_HEADER *archive, int block) {
-    auto source = TextureSourceLookup(archive);
-    if (!source) {
+PORT_OVERRIDE void CCharacter2::LoadChrFile(u32 *data, char *profile, mgCMemory *model,
+                                            mgCMemory *motion, mgCMemory *images, int block, CCharacter2 *parent, int outline) {
+    model_assets::CharacterLoadOptions options{.model_memory = model, .motion_memory = motion, .image_memory = images, .textures = &mgTexManager, .parent = parent, .texture_block = block, .outline = outline != 0};
+    std::string                        error;
+    const auto                         path = DataReadBufferPath(data);
+    if (!path) {
+        CT_LOG_ERROR(Data, "character: direct glTF path required");
         return;
     }
-    const auto *catalog = texture_catalog::Find(*source);
-    if (!catalog) {
-        return;
-    }
-    for (const auto &entry : catalog->entries) {
-        if (!entry.name.empty() && entry.name.front() != '#') {
-            mgTexManager.DeleteTexture(const_cast<char *>(entry.name.c_str()), block);
-        }
+    const bool loaded = model_assets::LoadCharacter(*this, std::filesystem::path(*path), profile ? profile : "", options, error);
+    if (!loaded) {
+        CT_LOG_ERROR(Data, "character: {}", error);
     }
 }
 
-} // namespace
+PORT_OVERRIDE void CCharacter2::LoadSkin(u32 *data, char *profile, char *name, mgCMemory *memory, int block) {
+    model_assets::CharacterLoadOptions options{.model_memory = memory, .motion_memory = memory, .image_memory = memory, .textures = &mgTexManager, .parent = nullptr, .texture_block = block, .outline = false};
+    std::string                        error;
+    const auto                         path = DataReadBufferPath(data);
+    if (!path) {
+        CT_LOG_ERROR(Data, "character skin: direct glTF path required");
+        return;
+    }
+    const bool loaded = model_assets::LoadSkin(*this, std::filesystem::path(*path), profile ? profile : "", name ? name : "", options, error);
+    if (!loaded) {
+        CT_LOG_ERROR(Data, "character skin: {}", error);
+    }
+}
 
 PORT_OVERRIDE void CCharacter2::DeleteExtMotion() {
     // Drop each extension before reselecting the base motion, preserving its pose transition.
     for (int slot = 1; slot < CHARA_MOTION_SET_MAX; ++slot) {
         motion[slot].frame_info = shadow_motion[slot].frame_info = nullptr;
+        character_motion::Forget(motion[slot].motion_list);
         key_list[slot] = nullptr;
         seq_list[slot] = nullptr;
         key_num[slot] = 0;
@@ -48,13 +62,8 @@ PORT_OVERRIDE void CCharacter2::DeleteExtMotion() {
     } else {
         mgTexManager.DeleteTexAnime(texture_block);
     }
-    // The archive pointer identifies a source in the converted texture catalog.
+    model_assets::DeleteCharacterTextures(*this, 1, CHARA_IMAGE_MAX - 1);
     for (int slot = 1; slot < CHARA_IMAGE_MAX; ++slot) {
-        auto *archive = images[slot];
-        if (archive == nullptr) {
-            continue;
-        }
-        DeleteCatalogTextures(archive, texture_block);
         images[slot] = nullptr;
     }
     for (int slot = 1; slot < CHARA_MOTION_SET_MAX; ++slot) {
@@ -71,8 +80,6 @@ PORT_OVERRIDE void CCharacter2::DeleteImage() {
             mgTexManager.DeleteTexAnimeGroup(texture_block, group);
         }
     }
-    if (images[0]) {
-        DeleteCatalogTextures(images[0], texture_block);
-        images[0] = nullptr;
-    }
+    model_assets::DeleteCharacterTextures(*this, 0, 0);
+    images[0] = nullptr;
 }

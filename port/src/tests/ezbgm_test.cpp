@@ -1,4 +1,7 @@
+#include "common.h"
+
 #include <gtest/gtest.h>
+#include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -14,12 +17,16 @@
 #include "audio/mixer.hpp"
 #include "audio/stream.hpp"
 #include "audio/synth.hpp"
-#include "common.h"
+#include "event.hpp"
+#include "event_func.hpp"
 #include "ezbgm.hpp"
 #include "platform/audio.hpp"
+#include "platform/clock.hpp"
+#include "platform/datapacks.hpp"
 #include "platform/paths.hpp"
 #include "platform/settings.hpp"
 #include "platform_fixture.hpp"
+#include "runscript.hpp"
 #include "snd_mngr.hpp"
 #include "sound.hpp"
 #include "sound_port.hpp"
@@ -28,8 +35,8 @@ namespace fs = std::filesystem;
 
 namespace {
 
-constexpr int          kChannel = 1;
-constexpr int          kFrames = 4800;
+constexpr int kChannel = 1;
+constexpr int kFrames = 4800;
 constexpr std::int16_t kMono = 10000;
 constexpr std::int16_t kLeft = 12000;
 constexpr std::int16_t kRight = -3000;
@@ -89,19 +96,25 @@ std::vector<std::int16_t> ConstantStereo() {
 class ScratchDataRoot {
 public:
     ScratchDataRoot()
-        : root_(fs::temp_directory_path() / std::format("ezbgm-test-{}", dc::test::ProcessId())),
-          previous_(PathsDataRoot()) {
+        : root(fs::temp_directory_path() / std::format("ezbgm-test-{}", dc::test::ProcessId())),
+          previous(PathsDataRoot()), previous_packs(datapacks::Root()) {
         std::error_code error;
-        fs::remove_all(root_, error);
-        fs::create_directories(root_ / "sound");
-        PathsSetDataRoot(root_);
+        fs::remove_all(root, error);
+        fs::create_directories(root / "data/sound");
+        PathsSetDataRoot(root / "data");
+        datapacks::Load(root / "data");
     }
 
     ~ScratchDataRoot() {
         CSnd.StreamClose(kChannel);
-        PathsSetDataRoot(previous_);
+        PathsSetDataRoot(previous);
+        if (previous_packs.empty()) {
+            datapacks::Clear();
+        } else {
+            datapacks::Load(previous_packs);
+        }
         std::error_code error;
-        fs::remove_all(root_, error);
+        fs::remove_all(root, error);
     }
 
     ScratchDataRoot(const ScratchDataRoot &) = delete;
@@ -109,17 +122,20 @@ public:
 
     void AddWav(const char *name, int channels, const std::vector<std::int16_t> &samples) {
         const std::string bytes = WavFile(channels, samples);
-        std::ofstream     out(root_ / "sound" / name, std::ios::binary);
+        std::ofstream     out(root / "data/sound" / name, std::ios::binary);
         out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+        out.close();
+        datapacks::Load(root / "data");
     }
 
 private:
-    fs::path root_;
-    fs::path previous_;
+    fs::path root;
+    fs::path previous;
+    fs::path previous_packs;
 };
 
 void OpenStream(int channel, const char *name) {
-    std::string buffer(name);
+    std::string buffer = std::string("sound/") + name;
     CSnd.StreamOpenFast(channel, buffer.data());
 }
 
@@ -343,7 +359,7 @@ TEST(EzBgm, StepAdvancesStreamsWithoutOutput) {
     CSnd.StreamPlay(kChannel);
 
     // END is set on the first step whose start is past the last sample, so floor(length / step) + 1 steps reach it.
-    const auto per_step = static_cast<std::int64_t>(audio::kSpuRate / SettingsGet().tick_rate);
+    const auto per_step = static_cast<std::int64_t>(audio::kSpuRate / ClockTickRate());
     const int  steps = static_cast<int>(kFrames / per_step) + 1;
     for (int step = 0; step < steps - 1; step++) {
         EzBgmStep();
@@ -354,9 +370,73 @@ TEST(EzBgm, StepAdvancesStreamsWithoutOutput) {
     EXPECT_EQ(StateOf(kChannel), kEnded);
 }
 
+TEST(EzBgm, LegacyHostRateDoesNotChangeNtscStreamAdvance) {
+    ASSERT_FALSE(AudioOutputRunning());
+    const auto   before = SettingsGet();
+    const double previous_rate = ClockTickRate();
+    auto         changed = before;
+    changed.tick_rate = 240;
+    SettingsChange(changed);
+    ScratchDataRoot root;
+    root.AddWav("0000001.wav", 1, ConstantMono());
+    EXPECT_DOUBLE_EQ(SettingsGet().tick_rate, 60);
+    {
+        ClockSetTickRate(60);
+        OpenStream(kChannel, "0000001.wav");
+        CSnd.StreamPlay(kChannel);
+        EzBgmStep();
+        EXPECT_EQ(EzBgmChannel(kChannel).Position(), static_cast<std::int64_t>(audio::kSpuRate / 60));
+    }
+    ClockSetTickRate(previous_rate);
+    SettingsChange(before);
+}
+
 TEST(EzBgm, OpenCommandsWithAnIntAddressAreRefused) {
     EXPECT_EQ(ezBgm(kChannel | EZBGM_OPEN, 0), 0);
     EXPECT_EQ(ezBgm(kChannel | EZBGM_OPEN_FROM_PACK, 0), 0);
     EXPECT_EQ(ezBgm(kChannel | EZBGM_UNK_8A00, 0), 0);
     EXPECT_FALSE(EzBgmChannel(kChannel).IsOpen());
+}
+
+TEST(EzBgm, EventVoiceCommandsOpenDirectWaveClips) {
+    ScratchDataRoot root;
+    root.AddWav("0000001.wav", 1, ConstantMono());
+    char clip[] = "0000001";
+    char pack[] = "unused_voice_group";
+    EXPECT_EQ(CommandStreamOpen(kChannel, clip), 1);
+    EXPECT_TRUE(EzBgmChannel(kChannel).IsOpen());
+    CSnd.StreamClose(kChannel);
+    EXPECT_EQ(CommandStreamOpenFromFPL(kChannel, pack, clip), 1);
+    EXPECT_TRUE(EzBgmChannel(kChannel).IsOpen());
+    CSnd.StreamClose(kChannel);
+    char direct[] = "sound/0000001.wav";
+    EXPECT_EQ(CommandStreamOpen(kChannel, direct), 1);
+    EXPECT_TRUE(EzBgmChannel(kChannel).IsOpen());
+    CSnd.StreamClose(kChannel);
+    EXPECT_EQ(CommandStreamOpen2(kChannel, clip), 1);
+    EXPECT_FALSE(EzBgmChannel(kChannel).IsOpen());
+}
+
+TEST(EzBgm, EventVoiceDispatchOpensNumericAndNamedDirectClips) {
+    ScratchDataRoot root;
+    root.AddWav("0000001.wav", 1, ConstantMono());
+    CRunScript script;
+    SetEventFunc(&script);
+    RS_STACKDATA args[2]{};
+    args[0].type = RS_INT;
+    args[0].val.i = 0;
+    args[1].type = RS_INT;
+    args[1].val.i = 1;
+    const auto source = EdEventInfo.stream_source;
+    EXPECT_EQ(script.ext_func_table[EVENT_EXT_STREAM_OPEN](args, 2), 1);
+    EXPECT_TRUE(EzBgmChannel(kChannel).IsOpen());
+    EXPECT_EQ(EdEventInfo.stream_source, EVENT_STREAM_VOICE_PACK);
+    CSnd.StreamClose(kChannel);
+    char clip[] = "0000001";
+    args[1].type = RS_STR;
+    args[1].val.s = clip;
+    EXPECT_EQ(script.ext_func_table[EVENT_EXT_STREAM_OPEN](args, 2), 1);
+    EXPECT_TRUE(EzBgmChannel(kChannel).IsOpen());
+    EXPECT_EQ(EdEventInfo.stream_source, EVENT_STREAM_FILE);
+    EdEventInfo.stream_source = source;
 }

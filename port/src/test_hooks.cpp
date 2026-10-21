@@ -1,19 +1,26 @@
 #include "test_hooks.hpp"
 
+#include <algorithm>
 #include <charconv>
 #include <cstdio>
 #include <cstdlib>
-#include <fstream>
+#include <limits>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <vector>
 
+#include "actionchara.hpp"
+#include "dng_main.hpp"
+#include "event.hpp"
+#include "event_func.hpp"
 #include "gamedata.hpp"
+#include "log/log.hpp"
 #include "main.hpp"
 #include "mapselect.hpp"
 #include "platform/config.hpp"
 #include "platform/input.hpp"
-#include "platform/paths.hpp"
+#include "platform/vfs.hpp"
 #include "savedata.hpp"
 #include "title.hpp"
 #include "userdata.hpp"
@@ -21,9 +28,17 @@
 extern unsigned char PortGameBootInit asm("Title_GameBootInit");
 
 namespace {
-std::optional<GameJump> target;
-std::vector<int>        gifts;
-bool                    fast_load = false;
+std::optional<GameJump>      target;
+std::vector<int>             gifts;
+bool                         fast_load = false;
+bool                         skip_events = false;
+bool                         invincible = false;
+std::optional<std::uint32_t> seed;
+
+// The dungeon script event that loads the selected floor without opening the floor list.
+constexpr int kDungeonFloorLoadEvent = 1010;
+
+constexpr int kNoLimit = std::numeric_limits<int>::max();
 
 bool Number(std::string_view text, int &value, int maximum) {
     if (text.empty()) {
@@ -34,26 +49,37 @@ bool Number(std::string_view text, int &value, int maximum) {
 }
 
 [[noreturn]] void BadTarget() {
-    std::fprintf(stderr, "bad --jump: target is absent from the game tables\n");
+    CT_LOG_ERROR(Main, "bad --jump: target is absent from the game tables");
+    LogFlush();
     std::exit(2);
 }
 
+void RequireKnownItem(int item) {
+    if (GetCommonItemData(item) == nullptr) {
+        CT_LOG_ERROR(Main, "bad --give: unknown item {}", item);
+        LogFlush();
+        std::exit(2);
+    }
+}
+
 bool ResolveEvent(int event, int &mode, INIT_LOOP_ARG &arg) {
-    std::ifstream file(PathsDataRoot() / "event/view_pal.txt");
-    std::string   line;
+    std::vector<std::uint8_t> bytes;
+    vfs::Read(vfs::Find(vfs::Base(), "event/view_pal.txt"), bytes);
+    std::istringstream file(std::string(bytes.begin(), bytes.end()));
+    std::string        line;
     while (std::getline(file, line)) {
         std::vector<std::string_view> columns;
         std::string_view              rest = line;
         for (;;) {
             auto tab = rest.find('\t');
             columns.push_back(rest.substr(0, tab));
-            if (tab == rest.npos) {
+            if (tab == std::string_view::npos) {
                 break;
             }
             rest.remove_prefix(tab + 1);
         }
         int id = 0;
-        if (columns.size() < 4 || !Number(columns[3], id, 2147483647) || id != event) {
+        if (columns.size() < 4 || !Number(columns[3], id, kNoLimit) || id != event) {
             continue;
         }
         arg.event_no = id;
@@ -79,33 +105,40 @@ bool GameParseJump(std::string_view text, GameJump &jump) {
     GameJump parsed;
     auto     colon = text.find(':');
     auto     name = text.substr(0, colon);
-    auto     arg = colon == text.npos ? std::string_view{} : text.substr(colon + 1);
+    auto     arg = colon == std::string_view::npos ? std::string_view{} : text.substr(colon + 1);
     if (name == "town" || name == "edit") {
         parsed.mode = JumpMode::Town;
-        if (colon != text.npos && !Number(arg, parsed.map, 188)) {
+        if (colon != std::string_view::npos && !Number(arg, parsed.map, 188)) {
+            return false;
+        }
+    } else if (name == "georama") {
+        // The developer menu's "diorama map" row: the Georama towns are maps 0 to 4.
+        parsed.mode = JumpMode::Georama;
+        parsed.map = 0;
+        if (colon != std::string_view::npos && !Number(arg, parsed.map, 4)) {
             return false;
         }
     } else if (name == "dungeon") {
         parsed.mode = JumpMode::Dungeon;
         parsed.map = 0;
         auto floor = arg.find(':');
-        if (colon != text.npos && !Number(arg.substr(0, floor), parsed.map, 6)) {
+        if (colon != std::string_view::npos && !Number(arg.substr(0, floor), parsed.map, 6)) {
             return false;
         }
-        if (floor != arg.npos && (!Number(arg.substr(floor + 1), parsed.floor, 99) || parsed.floor == 0)) {
+        if (floor != std::string_view::npos && (!Number(arg.substr(floor + 1), parsed.floor, 99) || parsed.floor == 0)) {
             return false;
         }
-        CSaveDataDungeon floors;
+        CSaveDataDungeon floors{};
         if (!floors.GetFloorInfoPtr(parsed.map, parsed.floor)) {
             return false;
         }
     } else if (name == "event") {
         parsed.mode = JumpMode::Event;
-        if (colon == text.npos || !Number(arg, parsed.event, 2147483647) || parsed.event == 0) {
+        if (colon == std::string_view::npos || !Number(arg, parsed.event, kNoLimit) || parsed.event == 0) {
             return false;
         }
     } else {
-        if (colon != text.npos) {
+        if (colon != std::string_view::npos) {
             return false;
         }
         if (name == "title") {
@@ -124,18 +157,18 @@ bool GameParseJump(std::string_view text, GameJump &jump) {
 
 bool GameParseGive(std::string_view text, std::vector<int> &items) {
     std::vector<int> parsed;
-    do {
+    for (;;) {
         auto comma = text.find(',');
         int  item = 0;
         if (!Number(text.substr(0, comma), item, 32767) || item == 0) {
             return false;
         }
         parsed.push_back(item);
-        if (comma == text.npos) {
+        if (comma == std::string_view::npos) {
             break;
         }
         text.remove_prefix(comma + 1);
-    } while (true);
+    }
     items = std::move(parsed);
     return true;
 }
@@ -159,12 +192,34 @@ void GameSetFastLoad(bool fast) { fast_load = fast; }
 
 bool GameFastLoad() { return fast_load; }
 
+void GameSetSkipEvents(bool skip) { skip_events = skip; }
+
+bool GameSkipEvents() { return skip_events; }
+
+void GameSetInvincible(bool value) { invincible = value; }
+
+bool GameInvincible() { return invincible; }
+
+void GameSetSeed(std::optional<std::uint32_t> value) { seed = value; }
+
+std::optional<std::uint32_t> GameSeed() { return seed; }
+
+void GameDebugFrame(int mode) {
+    if (mode != LOOP_DUNGEON) {
+        return;
+    }
+    if (invincible && MainChara__2 != nullptr) {
+        // Keeps the hit check's invulnerability window open, so no hit lands or knocks the character back.
+        MainChara__2->muteki_time = std::max(MainChara__2->muteki_time, 2);
+    }
+    if (skip_events && DngStatus.mode == DNG_STATUS_EVENT && EdEventInfo.skip_state == EVENT_SKIP_ENABLED) {
+        SkipEventStart();
+    }
+}
+
 void GamePrepareJump(int &mode, INIT_LOOP_ARG &arg) {
     for (int item : gifts) {
-        if (!GetCommonItemData(item)) {
-            std::fprintf(stderr, "bad --give: unknown item %d\n", item);
-            std::exit(2);
-        }
+        RequireKnownItem(item);
     }
     if (!target) {
         return;
@@ -174,6 +229,8 @@ void GamePrepareJump(int &mode, INIT_LOOP_ARG &arg) {
     arg = INIT_LOOP_ARG{};
     DebugFlag = 1;
     PortGameBootInit = 1;
+    char town_config[] = "dbg/pb.cfg.json";
+    char dungeon_config[] = "dbg/cap1.cfg.json";
     switch (jump.mode) {
         case JumpMode::Menu:
             mode = LOOP_MENU;
@@ -185,16 +242,26 @@ void GamePrepareJump(int &mode, INIT_LOOP_ARG &arg) {
             if (GetMapName(jump.map, nullptr) == nullptr || GetMapType(jump.map) < 0) {
                 BadTarget();
             }
-            LoadGameConfig("dbg/pb.cfg");
+            LoadGameConfig(town_config);
             mode = LOOP_EDIT;
             arg.map_no = jump.map;
             arg.event_no = 100;
             break;
+        case JumpMode::Georama: {
+            char georama_config[] = "dbg/geo.cfg.json";
+            LoadGameConfig(georama_config);
+            mode = LOOP_EDIT;
+            arg.map_no = jump.map;
+            break;
+        }
         case JumpMode::Dungeon:
-            LoadGameConfig("dbg/cap1.cfg");
+            LoadGameConfig(dungeon_config);
             mode = LOOP_DUNGEON;
             arg.map_no = jump.map;
             arg.floor_no = jump.floor;
+            if (skip_events) {
+                arg.event_no = kDungeonFloorLoadEvent;
+            }
             break;
         case JumpMode::Opening: {
             DebugGetItem(&GetSaveData()->user_data, 1);
@@ -224,10 +291,7 @@ void GameGiveOnArrival(int mode) {
     }
     auto &user = GetSaveData()->user_data;
     for (int item : gifts) {
-        if (GetCommonItemData(item) == nullptr) {
-            std::fprintf(stderr, "bad --give: unknown item %d\n", item);
-            std::exit(2);
-        }
+        RequireKnownItem(item);
         if (user.SearchAllHaveItem(item) == nullptr) {
             user.GetItem(item, 1);
         }

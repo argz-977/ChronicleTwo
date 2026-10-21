@@ -1,8 +1,7 @@
-#include <gtest/gtest.h>
-
 #include "common.h"
 
 #include <eekernel.h>
+#include <gtest/gtest.h>
 #include <libgraph.h>
 
 #include <chrono>
@@ -10,11 +9,10 @@
 #include <thread>
 
 #include "mglib.hpp"
-#include "stubs/mglib.hpp"
 #include "platform/clock.hpp"
 #include "sce/threads.hpp"
+#include "stubs/mglib.hpp"
 
-int VSyncCallBack(int field);
 void WaitVSync(int start, int frames);
 
 namespace {
@@ -22,19 +20,19 @@ namespace {
 int g_callbacks = 0;
 int g_thread_runs = 0;
 
-int CountCallBack(int) {
+int CountCallBack(int /*unused*/) {
     ++g_callbacks;
     return 0;
 }
 
-void CountingLoop(void *) {
+void CountingLoop(void * /*unused*/) {
     for (;;) {
         ++g_thread_runs;
         RotateThreadReadyQueue(10);
     }
 }
 
-void VSyncSpinLoop(void *) {
+void VSyncSpinLoop(void * /*unused*/) {
     for (;;) {
         ++g_thread_runs;
         WaitVSync(mgGetVSyncCount(), 1);
@@ -91,7 +89,7 @@ TEST(MglibTime, RotatingThreadRunsOncePerWaitVSyncIteration) {
     EXPECT_EQ(DeleteThread(id), 0);
 }
 
-// Bounded so that a regression which stops the thread from running fails instead of hanging the case.
+// Bounded so a thread that never runs fails the case instead of hanging it.
 TEST(MglibTime, ThreadSpinningInWaitVSyncPumpsTheClock) {
     KzThreadsSetMainPriority(10);
     UnboundedVSyncClock();
@@ -137,4 +135,52 @@ TEST(MglibTime, FrameFieldsIsNonNegativeRightAfterBegin) {
 
     EXPECT_GE(mgTimeFrameFields(), 0.0f);
     EXPECT_LT(mgTimeFrameFields(), 1.0f);
+}
+
+TEST(MglibTime, UnboundedFrameFieldsCountLogicTicksAtEveryRate) {
+    for (double rate : {50.0, 60.0, 59.94, 240.0}) {
+        SCOPED_TRACE(rate);
+        ClockSetTickRate(rate);
+        UnboundedVSyncClock();
+        mgInitVSyncCallBack(nullptr);
+        mgTimeFrameBegin();
+        EXPECT_FLOAT_EQ(mgTimeFrameFields(), 0.0f);
+        ClockPump();
+        EXPECT_FLOAT_EQ(mgTimeFrameFields(), 1.0f);
+        ClockPump();
+        EXPECT_FLOAT_EQ(mgTimeFrameFields(), 2.0f);
+        mgTimeFrameBegin();
+        EXPECT_FLOAT_EQ(mgTimeFrameFields(), 0.0f);
+        for (int tick = 0; tick < 7; ++tick) {
+            ClockPump();
+        }
+        EXPECT_FLOAT_EQ(mgTimeFrameFields(), 7.0f);
+    }
+}
+
+TEST(MglibTime, UnboundedFrameFieldsIgnoreHostDelay) {
+    ClockSetTickRate(60);
+    UnboundedVSyncClock();
+    mgInitVSyncCallBack(nullptr);
+    mgTimeFrameBegin();
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    EXPECT_FLOAT_EQ(mgTimeFrameFields(), 0.0f);
+    ClockPump();
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    EXPECT_FLOAT_EQ(mgTimeFrameFields(), 1.0f);
+}
+
+TEST(MglibTime, UnboundedFrameFieldsReanchorWhenClockResets) {
+    UnboundedVSyncClock();
+    mgInitVSyncCallBack(nullptr);
+    for (int tick = 0; tick < 5; ++tick) {
+        ClockPump();
+    }
+    mgTimeFrameBegin();
+    ClockPump();
+    EXPECT_FLOAT_EQ(mgTimeFrameFields(), 1.0f);
+    ClockReset();
+    EXPECT_FLOAT_EQ(mgTimeFrameFields(), 0.0f);
+    ClockPump();
+    EXPECT_FLOAT_EQ(mgTimeFrameFields(), 1.0f);
 }

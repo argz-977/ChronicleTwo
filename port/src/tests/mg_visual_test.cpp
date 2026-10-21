@@ -15,6 +15,7 @@
 #include "mg_drawprim.hpp"
 #include "mg_drawprim_port.hpp"
 #include "mg_frame.hpp"
+#include "mg_shadow.hpp"
 #include "mg_texture.hpp"
 #include "mg_visual.hpp"
 #include "mg_visual_port.hpp"
@@ -74,8 +75,8 @@ void MdtFile::Build(const ModelSpec &model) {
     const size_t faces_ofs = material_ofs + sizeof(MDT_MATERIAL_);
     const size_t total = faces_ofs + faces_bytes;
 
-    words_.assign((total + 15) / 16, u_long128(0));
-    uint8_t *base = reinterpret_cast<uint8_t *>(words_.data());
+    words_.assign((total + 15) / 16, static_cast<u_long128>(0));
+    auto *base = reinterpret_cast<uint8_t *>(words_.data());
 
     MDT_HEADER header = {};
     std::memcpy(header.magic, "MDT", 3);
@@ -109,7 +110,7 @@ void MdtFile::Build(const ModelSpec &model) {
 
     size_t cursor = faces_ofs + sizeof(MDT_FACES);
     for (const FaceSpec &face : model.faces) {
-        const u_int vertex_num = static_cast<u_int>(face.corners.size());
+        const auto  vertex_num = static_cast<u_int>(face.corners.size());
         const u_int material_index = 0;
         std::memcpy(base + cursor, &face.type, sizeof(u_int));
         std::memcpy(base + cursor + 4, &vertex_num, sizeof(u_int));
@@ -146,7 +147,7 @@ class VisualRenderer {
 public:
     VisualRenderer(int width, int height) {
         SetEnv("VK_LAYER_VALIDATE_SYNC", "1", 0);
-        WindowConfig window{width, height, true};
+        WindowConfig window{.width = width, .height = height, .headless = true};
         window.vulkan = false;
         WindowInit(window);
 
@@ -181,7 +182,10 @@ ModelSpec CentreTriangle(bool reversed, std::array<float, 4> diffuse = {1.0f, 1.
     ModelSpec model;
     model.vertices = {{-50.0f, -50.0f, 100.0f}, {150.0f, -50.0f, 100.0f}, {-50.0f, 150.0f, 100.0f}};
     model.diffuse = diffuse;
-    model.faces.push_back({kPrimTriangle | kUntextured, reversed ? std::vector<int>{0, 2, 1} : std::vector<int>{0, 1, 2}});
+    model.faces.push_back({
+        .type = kPrimTriangle | kUntextured, .corners = reversed ? std::vector<int>{0, 2, 1}
+                 : std::vector<int>{0, 1, 2}
+    });
     return model;
 }
 
@@ -250,8 +254,12 @@ uint64_t KeyOf(const void *object) {
 TEST(MgVisual, FaceMeshListAndStrip) {
     ModelSpec model;
     model.vertices = {{0, 0, 0}, {1, 0, 0}, {2, 0, 0}, {3, 0, 0}, {4, 0, 0}};
-    model.faces.push_back({kPrimTriangle | kUntextured, {0, 1, 2}});
-    model.faces.push_back({kPrimStrip | kUntextured, {0, 1, 2, 3, 4}});
+    model.faces.push_back({
+        .type = kPrimTriangle | kUntextured, .corners = {0, 1, 2}
+    });
+    model.faces.push_back({
+        .type = kPrimStrip | kUntextured, .corners = {0, 1, 2, 3, 4}
+    });
 
     MdtFile file(model);
     MemoryPool pool;
@@ -450,7 +458,9 @@ namespace {
 size_t DrawBoxRecords() {
     ModelSpec model;
     model.vertices = {{-76.0f, -2.0f, 98.0f}, {-72.0f, -2.0f, 98.0f}, {-72.0f, 2.0f, 98.0f}};
-    model.faces.push_back({kPrimTriangle | kUntextured, {0, 1, 2}});
+    model.faces.push_back({
+        .type = kPrimTriangle | kUntextured, .corners = {0, 1, 2}
+    });
 
     MdtFile file(model);
     MemoryPool pool;
@@ -564,8 +574,9 @@ TEST(MgVisual, QueuedFixFaceSurvivesFaceAddressReuse) {
     MemoryPool      model;
     mgCVisualFixMDT first;
     ASSERT_EQ(first.DataAssignMDT(first_file.header(), &model.memory(), nullptr), 1);
-    const mgCFace *face = first.face_group->face;
-    const auto    *geometry = mgVisualPortFaceMesh(face);
+    const mgCFace      *face = first.face_group->face;
+    const mgFACE_GROUP *group = first.face_group;
+    const auto         *geometry = mgVisualPortGroupMesh(group, nullptr);
     ASSERT_NE(geometry, nullptr);
     const gfx::MeshHandle previous = geometry->mesh;
     ASSERT_NE(previous, gfx::kNullMesh);
@@ -589,8 +600,10 @@ TEST(MgVisual, QueuedFixFaceSurvivesFaceAddressReuse) {
     model.memory().stReset();
     mgCVisualFixMDT next;
     ASSERT_EQ(next.DataAssignMDT(next_file.header(), &model.memory(), nullptr), 1);
+    ASSERT_EQ(next.face_group, group);
     ASSERT_EQ(next.face_group->face, face);
-    ASSERT_NE(mgVisualPortFaceMesh(face)->mesh, previous);
+    // The reused address holds identical geometry, so the batch and its GPU mesh carry over.
+    EXPECT_EQ(mgVisualPortGroupMesh(group, nullptr)->mesh, previous);
 
     mgPreEndDraw(nullptr);
     mgEndDraw(0, nullptr);
@@ -599,6 +612,60 @@ TEST(MgVisual, QueuedFixFaceSurvivesFaceAddressReuse) {
 
     DrawTickImmediate(next, attr);
     ExpectCentre(0, 128, 0);
+}
+
+// Native models refresh shadow faces at load; outside the shadow pass they draw nothing, even straight after a
+// lit visual.
+TEST(MgVisual, ShadowModelAfterLitVisualDrawsNoMesh) {
+    VisualRenderer renderer(640, 480);
+    mgSetBackGround(0.0f, 0.0f, 0.0f, 128.0f);
+    SetCamera();
+
+    MdtFile      lit_file(CentreTriangle(false));
+    MemoryPool   pool;
+    mgCVisualMDT lit;
+    ASSERT_EQ(lit.DataAssignMDT(lit_file.header(), &pool.memory(), nullptr), 1);
+
+    float positions[3][4] = {
+        {-50, -50, 100, 1},
+        {150, -50, 100, 1},
+        {-50, 150, 100, 1}
+    };
+    int     indices[] = {0, 1, 2};
+    mgCFace face{};
+    face.type = kPrimTriangle | kUntextured | MG_FACE_NO_NORMAL;
+    face.vertex_num = 3;
+    face.index_stride = 1;
+    face.index_num = 3;
+    face.index = indices;
+    mgFACE_GROUP group{};
+    group.face = &face;
+    mgMaterial material{};
+    mgCShadowMDT shadow;
+    shadow.vertex = positions;
+    shadow.vertex_num = 3;
+    shadow.face_group = &group;
+    shadow.material = &material;
+    shadow.material_num = 1;
+    mgVisualPortRefreshFace(&shadow, &face);
+    ASSERT_NE(mgVisualPortFaceMesh(&face), nullptr);
+
+    mgCFrameAttr attr;
+    attr.no_light = 1;
+    SetColour(attr, {128.0f, 128.0f, 128.0f, 128.0f});
+    float matrix[4][4];
+    Identity(matrix);
+    PrepareObject(attr);
+    u_int tag[4] = {};
+
+    mgBeginFrame(nullptr);
+    lit.Draw(tag, matrix, nullptr);
+    shadow.Draw(tag, matrix, nullptr);
+    mgEndFrame(nullptr);
+
+    const auto *list = mgPortLastList();
+    ASSERT_NE(list, nullptr);
+    EXPECT_EQ(list->records.size(), 1u);
 }
 
 // Packet quadwords are transient even when their faces were uploaded persistently.
@@ -684,7 +751,9 @@ void CheckMaterialWrap(bool queued) {
     mgCFrameAttr attr;
     attr.no_light = 1;
     SetColour(attr, {128, 128, 128, 128});
-    MemoryPool data_a, data_b, packets;
+    MemoryPool data_a;
+    MemoryPool data_b;
+    MemoryPool packets;
     mgSetDataBuffer(&data_a.memory(), &data_b.memory(), 0);
     for (int repeat = 0; repeat < 2; ++repeat) {
         texture->clamp.WMS = texture->clamp.WMT = repeat ? 0 : 1;

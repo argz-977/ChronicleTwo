@@ -6,7 +6,6 @@
 
 class CMenuKeyFunc;
 class CMenuPosDataForm;
-struct InputMenuMouse;
 
 namespace menumouse {
 
@@ -15,8 +14,8 @@ struct Point {
 };
 
 struct Rect {
-    float x = 0, y = 0, w = 0, h = 0;
-    bool  Contains(Point p) const;
+    float              x = 0, y = 0, w = 0, h = 0;
+    [[nodiscard]] bool Contains(Point p) const;
 };
 
 struct Target {
@@ -30,6 +29,17 @@ struct Target {
 // clip is its visible aperture, so rows sliding out cannot be selected.
 Target GridHit(Point p, Point origin, Rect clip, int count);
 int    ScrollTop(int top, int count, int visible_rows, float wheel);
+// True when a bag cell's row is inside the target visible rows, not just the eased aperture.
+bool  VisibleRow(int cursor, int top, int visible_rows);
+Point FormPoint(CMenuPosDataForm *form, const char *part = nullptr);
+// The item board's visible aperture for its form.
+Rect ItemBoardClip(CMenuPosDataForm *board);
+// Func_MenuItemBrdPosStep's resting origin of the bag's first cell at top line 0.
+Point ItemBoardRest(CMenuPosDataForm *board);
+// After a wheel scroll to top, the visible cell that settles under p, else the cursor kept within the visible rows.
+Target WheelTarget(Point p, Point rest, Rect clip, int top, int count, int cursor);
+// The bag cell under p on a drawn item board, or -1.
+int BagHit(Point p, CMenuPosDataForm *board, int count);
 
 struct Take {
     bool          pointing = false, moved = false;
@@ -67,3 +77,5 @@ void MenuMouseClose();
 
 bool MenuMouseItemActive();
 void MenuMouseItemOrigin(float &x, float &y);
+// Where the pointer is on screen while it carries an item on the item page.
+bool MenuMouseHeldItemAt(float &x, float &y);

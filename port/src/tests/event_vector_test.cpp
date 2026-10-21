@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
 
-#include <cstring>
 #include <memory>
 
 #include "dng_main.hpp"
@@ -69,7 +68,7 @@ TEST(EventVector, RandomCircleReturnsAllCoordinates) {
 
 TEST(EventVector, TreasurePositionIsDecodedBeforeMissingManagerReturns) {
     auto scene = std::make_unique<CScene>();
-    auto previous = EventScene;
+    auto *previous = EventScene;
     EventScene = scene.get();
     scene->battle_area.treasure_box = nullptr;
     CRunScript script;

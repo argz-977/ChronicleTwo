@@ -95,7 +95,7 @@ TEST_F(EventSwordMemory, TextureUsesTheSelectedSlotAndPreservesItsRectangle) {
     std::strcpy(texture.name, "trail");
     texture.block = 7;
     const int      bucket = mgTexManager.hash(texture.name);
-    mgTEXTURE_HASH link{&texture, mgTexManager.hash_table[bucket]};
+    mgTEXTURE_HASH link{.texture = &texture, .next = mgTexManager.hash_table[bucket]};
     mgTexManager.hash_table[bucket] = &link;
     for (auto &effect : effects) {
         effect.texture = nullptr;

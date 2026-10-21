@@ -102,7 +102,8 @@ bool Inverse(const Matrix &m, Matrix &out) {
 }
 
 Matrix Rotation(float yaw, float pitch) {
-    Matrix y = Read(gfx::IdentityMeshTransform().view), x = y;
+    Matrix y = Read(gfx::IdentityMeshTransform().view);
+    Matrix x = y;
     y[0] = y[10] = std::cos(yaw);
     y[8] = std::sin(yaw);
     y[2] = -y[8];
@@ -138,8 +139,10 @@ void MouseFixedDisplayList(const gfx::DisplayList &source, gfx::DisplayList &out
     out.cameras = source.cameras;
     out.scenes = source.scenes;
     out.prog0_blocks = source.prog0_blocks;
+    out.palettes = source.palettes;
     out.cut = source.cut;
     out.camera_cut = source.camera_cut;
+    out.cut_generation = source.cut_generation;
     out.needs_base = source.needs_base;
     out.tagged_2d = source.tagged_2d;
     out.scene = source.scene;
@@ -155,7 +158,7 @@ void MouseFixedDisplayList(const gfx::DisplayList &source, gfx::DisplayList &out
     const Matrix rotate = Rotation(-yaw, -pitch);
     // Offscreen character outlines use the same camera; unrelated views stay retail.
     std::vector<bool> moved(source.cameras.size());
-    for (size_t i = 0; i < moved.size(); ++i) {
+    for (std::size_t i = 0; i < moved.size(); ++i) {
         moved[i] = source.cameras[i] == source.cameras[camera];
         if (moved[i]) {
             out.cameras[i] = Multiply(rotate, source.cameras[i]);
@@ -223,9 +226,10 @@ FixedMouseLook display_look;
 }
 
 bool MouseFixedActive(double seconds) {
-    auto                      &look = display_look;
     static CCameraControl     *owner = nullptr;
-    static int                 map = -1, submap = -1, active_map = -1;
+    static int                 map = -1;
+    static int                 submap = -1;
+    static int                 active_map = -1;
     const auto                 sample = InputPeekMouseLookTotal();
     static InputMouseLookTotal before;
     static std::uint64_t       display_sample = 0;
@@ -233,7 +237,7 @@ bool MouseFixedActive(double seconds) {
     CScene                    *scene = camera ? GetMainScene() : nullptr;
     if (owner != camera || (scene && (map != scene->now_map_no || submap != scene->now_sub_map_no ||
                                       active_map != scene->active_map))) {
-        look = {};
+        display_look = {};
         before = sample;
         owner = camera;
         map = scene ? scene->now_map_no : -1;
@@ -241,31 +245,41 @@ bool MouseFixedActive(double seconds) {
         active_map = scene ? scene->active_map : -1;
     }
     if (before.epoch != sample.epoch) {
-        look = {};
+        display_look = {};
         before = sample;
     }
-    look.Update(camera != nullptr, ++display_sample, sample.yaw - before.yaw,
-                sample.pitch - before.pitch, seconds);
+    display_look.Update(camera != nullptr, ++display_sample, sample.yaw - before.yaw, sample.pitch - before.pitch,
+                        seconds);
     before = sample;
-    return look.Active();
+    return display_look.Active();
+}
+
+void MouseFixedLook(float &yaw, float &pitch) {
+    yaw = display_look.yaw;
+    pitch = display_look.pitch;
+}
+
+bool MouseFixedRenderAt(const gfx::DisplayList &list, const gfx::DisplayList *previous, float yaw, float pitch,
+                        float alpha, const gfx::RenderOptions &options) {
+    // Reuse storage across displays; geometry and resource handles remain borrowed.
+    static gfx::DisplayList turned;
+    static gfx::DisplayList turned_previous;
+    MouseFixedDisplayList(list, turned, yaw, pitch);
+    auto render = options;
+    render.previous = nullptr;
+    if (previous) {
+        MouseFixedDisplayList(*previous, turned_previous, yaw, pitch);
+        render.previous = &turned_previous;
+    }
+    return gfx::RenderList(turned, alpha, render);
 }
 
 bool MouseFixedRender(const gfx::DisplayList &list, float alpha, const gfx::RenderOptions &options,
                       double seconds) {
-    const bool  active = MouseFixedActive(seconds);
-    const auto &look = display_look;
-    if (!active || options.canonical) {
+    if (!MouseFixedActive(seconds) || options.canonical) {
         return gfx::RenderList(list, alpha, options);
     }
-    // Reuse storage across displays; geometry and resource handles remain borrowed.
-    static gfx::DisplayList turned, previous;
-    MouseFixedDisplayList(list, turned, look.yaw, look.pitch);
-    auto render = options;
-    if (options.previous) {
-        MouseFixedDisplayList(*options.previous, previous, look.yaw, look.pitch);
-        render.previous = &previous;
-    }
-    return gfx::RenderList(turned, alpha, render);
+    return MouseFixedRenderAt(list, options.previous, display_look.yaw, display_look.pitch, alpha, options);
 }
 
 float MouseFixedCullRadius(float focal_x, float focal_y, float half_width, float half_height) {
@@ -273,7 +287,7 @@ float MouseFixedCullRadius(float focal_x, float focal_y, float half_width, float
     // the bounded 15-degree yaw and 10-degree pitch. Keep the original draw pose.
     const float angle = std::atan(std::hypot(half_width / focal_x, half_height / focal_y)) +
                         25 * std::numbers::pi_v<float> / 180;
-    if (!(focal_x > 0 && focal_y > 0) || angle >= std::numbers::pi_v<float> / 2) {
+    if (focal_x <= 0 || focal_y <= 0 || angle >= std::numbers::pi_v<float> / 2) {
         return std::numeric_limits<float>::max() / 4;
     }
     return std::max(focal_x, focal_y) * std::tan(angle);

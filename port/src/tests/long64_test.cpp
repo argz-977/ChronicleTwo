@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <array>
-#include <cstdint>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -23,7 +22,12 @@ constexpr char kAlphabet[] = "0123456789abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQR
 
 constexpr int kSizes[] = {16, 64, 256};
 
-enum class Pattern { kRamp, kOnes, kHighGroups, kRandom };
+enum class Pattern {
+    kRamp,
+    kOnes,
+    kHighGroups,
+    kRandom
+};
 constexpr Pattern kPatterns[] = {Pattern::kRamp, Pattern::kOnes, Pattern::kHighGroups, Pattern::kRandom};
 
 u64 ReadWord(const u_int *packet, int index) {
@@ -40,26 +44,26 @@ u64 GroupValue(const std::vector<u8> &bytes, int group) {
 
 std::vector<u8> MakePayload(Pattern pattern, int size, u32 seed) {
     std::vector<u8> bytes(static_cast<std::size_t>(size));
-    u32 state = seed;
+    u32             state = seed;
 
     for (int i = 0; i < size; i++) {
         state = state * 1664525u + 1013904223u;
         const u8 random = static_cast<u8>(state >> 24);
-        u8 value = 0;
+        u8       value = 0;
 
         switch (pattern) {
-        case Pattern::kRamp:
-            value = static_cast<u8>(i);
-            break;
-        case Pattern::kOnes:
-            value = 0xFF;
-            break;
-        case Pattern::kHighGroups:
-            value = (i % 8 >= 4) ? static_cast<u8>(random | 0x80) : random;
-            break;
-        case Pattern::kRandom:
-            value = random;
-            break;
+            case Pattern::kRamp:
+                value = static_cast<u8>(i);
+                break;
+            case Pattern::kOnes:
+                value = 0xFF;
+                break;
+            case Pattern::kHighGroups:
+                value = (i % 8 >= 4) ? static_cast<u8>(random | 0x80) : random;
+                break;
+            case Pattern::kRandom:
+                value = random;
+                break;
         }
 
         bytes[static_cast<std::size_t>(i)] = value;
@@ -72,9 +76,9 @@ int TextLength(int size) {
     return size / 8 * 11;
 }
 
-} // namespace
-
 class Long64 : public testing::Test {};
+
+} // namespace
 
 TEST_F(Long64, MgSetPkTEX0TwoRegisterFormWritesFull64BitWords) {
     alignas(16) u_int packet[24];
@@ -145,7 +149,7 @@ TEST_F(Long64, PasswordEncodeThenDecodeRestoresEveryPayload) {
                 }
             }
 
-            std::vector<u8> scrambled = payload;
+            std::vector<u8>   scrambled = payload;
             std::vector<char> text(static_cast<std::size_t>(TextLength(size) + 1));
             ASSERT_EQ(EncodePassword(scrambled.data(), size, key.data(), kKeySize, text.data(),
                                      static_cast<int>(text.size())),
@@ -155,7 +159,7 @@ TEST_F(Long64, PasswordEncodeThenDecodeRestoresEveryPayload) {
             ASSERT_EQ(password.size(), static_cast<std::size_t>(TextLength(size)));
 
             std::vector<u8> decoded(static_cast<std::size_t>(size), 0xAA);
-            std::string input = password;
+            std::string     input = password;
             ASSERT_EQ(DecodePassword(input.data(), decoded.data(), size, key.data(), kKeySize), 1);
 
             // The last two bytes are the checksum that encoding stored there, not payload.
@@ -171,15 +175,15 @@ TEST_F(Long64, PasswordSingleCharacterTamperIsRejectedOrChangesBytes) {
         for (int size : kSizes) {
             SCOPED_TRACE(testing::Message() << "pattern " << static_cast<int>(pattern) << " size " << size);
 
-            std::vector<u8> scrambled = MakePayload(pattern, size, 0x1234u + static_cast<u32>(size));
+            std::vector<u8>   scrambled = MakePayload(pattern, size, 0x1234u + static_cast<u32>(size));
             std::vector<char> text(static_cast<std::size_t>(TextLength(size) + 1));
             ASSERT_EQ(EncodePassword(scrambled.data(), size, key.data(), kKeySize, text.data(),
                                      static_cast<int>(text.size())),
                       1);
 
             const std::string password = text.data();
-            std::vector<u8> reference(static_cast<std::size_t>(size), 0);
-            std::string original = password;
+            std::vector<u8>   reference(static_cast<std::size_t>(size), 0);
+            std::string       original = password;
             ASSERT_EQ(DecodePassword(original.data(), reference.data(), size, key.data(), kKeySize), 1);
 
             // Decoding is injective over the bytes, and changing one digit changes its 64-bit group,
@@ -193,7 +197,7 @@ TEST_F(Long64, PasswordSingleCharacterTamperIsRejectedOrChangesBytes) {
                 tampered[static_cast<std::size_t>(i)] = kAlphabet[(digit + 1) % 58];
 
                 std::vector<u8> out(static_cast<std::size_t>(size), 0);
-                const int result = DecodePassword(tampered.data(), out.data(), size, key.data(), kKeySize);
+                const int       result = DecodePassword(tampered.data(), out.data(), size, key.data(), kKeySize);
 
                 EXPECT_TRUE(result == 0 || out != reference) << "character " << i;
             }

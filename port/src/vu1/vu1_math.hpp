@@ -14,15 +14,15 @@ struct Vec4 {
 };
 
 constexpr Vec4 operator+(const Vec4& a, const Vec4& b) {
-    return {a.x + b.x, a.y + b.y, a.z + b.z, a.w + b.w};
+    return {.x = a.x + b.x, .y = a.y + b.y, .z = a.z + b.z, .w = a.w + b.w};
 }
 
 constexpr Vec4 operator-(const Vec4& a, const Vec4& b) {
-    return {a.x - b.x, a.y - b.y, a.z - b.z, a.w - b.w};
+    return {.x = a.x - b.x, .y = a.y - b.y, .z = a.z - b.z, .w = a.w - b.w};
 }
 
 constexpr Vec4 operator*(const Vec4& v, float s) {
-    return {v.x * s, v.y * s, v.z * s, v.w * s};
+    return {.x = v.x * s, .y = v.y * s, .z = v.z * s, .w = v.w * s};
 }
 
 constexpr Vec4 operator*(float s, const Vec4& v) {
@@ -35,10 +35,12 @@ struct Mat4 {
 };
 
 constexpr Mat4 Identity() {
-    return {{{1.0f, 0.0f, 0.0f, 0.0f},
-             {0.0f, 1.0f, 0.0f, 0.0f},
-             {0.0f, 0.0f, 1.0f, 0.0f},
-             {0.0f, 0.0f, 0.0f, 1.0f}}};
+    return {
+        {{.x = 1.0f, .y = 0.0f, .z = 0.0f, .w = 0.0f},
+         {.x = 0.0f, .y = 1.0f, .z = 0.0f, .w = 0.0f},
+         {.x = 0.0f, .y = 0.0f, .z = 1.0f, .w = 0.0f},
+         {.x = 0.0f, .y = 0.0f, .z = 0.0f, .w = 1.0f}}
+    };
 }
 
 // Left-to-right accumulation matches the VU MULAx/MADDAy/MADDAz/MADDw chain. Reordering changes
@@ -52,7 +54,7 @@ constexpr float Dot3(Vec4 a, Vec4 b) {
 }
 
 constexpr Vec4 Cross3(Vec4 a, Vec4 b) {
-    return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x, 0.0f};
+    return {.x = a.y * b.z - a.z * b.y, .y = a.z * b.x - a.x * b.z, .z = a.x * b.y - a.y * b.x, .w = 0.0f};
 }
 
 // VU FTOI0: truncation toward zero, saturating to int32, NaN -> 0.
@@ -82,10 +84,10 @@ constexpr Fog MakeFog(float near_dist, float far_dist, float far_value, float ne
     const float range = far_value - near_value;
     const float span = far_dist - near_dist;
     return {
-        (far_value + near_value + range * (far_dist + near_dist) / span) * 0.5f,
-        near_value,
-        far_value,
-        -far_dist * near_dist * range / span,
+        .offset = (far_value + near_value + range * (far_dist + near_dist) / span) * 0.5f,
+        .near_value = near_value,
+        .far_value = far_value,
+        .scale = -far_dist * near_dist * range / span,
     };
 }
 

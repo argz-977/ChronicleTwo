@@ -4,11 +4,14 @@
 #include "first_person_walk.hpp"
 
 #define CAMERA_CONTROL_USE_RETAIL_ASSIGNMENT
+#include <cmath>
+
 #include "cameracontrol.hpp"
 #undef CAMERA_CONTROL_USE_RETAIL_ASSIGNMENT
 
 #include <algorithm>
 #include <cmath>
+#include <numbers>
 
 #include "camera_mouse.hpp"
 #include "camera_zoom.hpp"
@@ -24,6 +27,7 @@
 #include "platform/input.hpp"
 #include "scenesnd.hpp"
 #include "subgame.hpp"
+#include "vu0_lanes.hpp"
 
 extern mgCCamera *PortContinuousEyeCamera;
 
@@ -39,20 +43,7 @@ void MeasureControlPose(CCameraControl &camera) {
 }
 } // namespace
 
-CameraCtrlParam &CameraCtrlParam::operator=(const CameraCtrlParam &source) {
-    min_dist = source.min_dist;
-    max_dist = source.max_dist;
-    near_height = source.near_height;
-    far_height = source.far_height;
-    height = source.height;
-    max_height = source.max_height;
-    min_height = source.min_height;
-    rest_max_height = source.rest_max_height;
-    rest_min_height = source.rest_min_height;
-    ground_space = source.ground_space;
-    no_check = source.no_check;
-    return *this;
-}
+CameraCtrlParam &CameraCtrlParam::operator=(const CameraCtrlParam &source) = default;
 
 PORT_OVERRIDE void CCameraControl::MoveCamera(CPadControl *pad, float *player_rot, CCPoly *polys, int poly_count) {
     Control control{};
@@ -85,13 +76,34 @@ PORT_OVERRIDE void CCameraControl::MoveCamera(CPadControl *pad, float *player_ro
                                                        MainChara__2, SubGameRunning(), GamePad__2.key_lock,
                                                        DebugInfo.debug_camera != 0)
                               : TownMouseCameraOwns(this, scene, pad, walking, SubGameRunning(), GamePad__2.key_lock);
+    float      stick_yaw = 0;
+    float      stick_pitch = 0;
+    if (owns) {
+        const bool button_turn = !(rot_cancel & CAMERA_ROT_CANCEL_BUTTON) &&
+                                 (pad->Btn(PAD_BTN_L1_HELD) || pad->Btn(PAD_BTN_R1_HELD));
+        if (!button_turn) {
+            stick_yaw = -control.rot;
+            control.rot = 0;
+        }
+        stick_pitch = -0.01f * control.height;
+        control.height = 0;
+    }
+    const bool reset = control.rot_back || (ConfigGet().mouse_zoom && look.zoom_reset);
+    if (fresh && stick_yaw != 0 && !reset) {
+        CancelRotBack();
+    }
     // Wheel zoom has its own framing policy. Extending right-stick look parity
     // to player actions must not change which states can take over distance.
-    const bool                   zoom_owns = owns && (!dungeon || (!MainChara__2->lock_on && MainChara__2->CheckRunEvent()));
+    const bool zoom_owns = owns && (!dungeon || (!MainChara__2->lock_on && MainChara__2->CheckRunEvent()));
+    // A selected distance survives attacks and carrying, which only pause wheel
+    // input; handing those ticks to retail would pull the eye in and back out.
+    const bool                   zoom_keeps = owns && (!dungeon || !MainChara__2->lock_on);
     static CameraZoom            zoom;
     static CCameraControl       *zoom_camera = nullptr;
     static CScene               *zoom_scene = nullptr;
-    static int                   zoom_map = -1, zoom_submap = -1, zoom_param = -1;
+    static int                   zoom_map = -1;
+    static int                   zoom_submap = -1;
+    static int                   zoom_param = -1;
     static const DNG_FLOOR_SAVE *zoom_floor = nullptr;
     static int                   zoom_visit = -1;
     const auto                  *floor = dungeon ? NowFloorInfoPtr : nullptr;
@@ -112,29 +124,48 @@ PORT_OVERRIDE void CCameraControl::MoveCamera(CPadControl *pad, float *player_ro
         zoom.Read(*this, fresh ? look.zoom : 0,
                   (fresh && look.zoom_reset) || control.rot_back, ConfigGet().mouse_zoom);
     }
-    // A pad-only session (even with the option enabled) takes exactly the retail
-    // path until a wheel request. Other camera owners never inherit zoom limits.
-    if (zoom_owns && zoom.active) {
+    CameraCtrlParam *param = GetActiveParam();
+    const float      rest_min_height = param->rest_min_height;
+    const float      rest_max_height = param->rest_max_height;
+    const int        saved_rot_cancel = rot_cancel;
+    if (owns) {
+        // Direct pitch stays where the player leaves it instead of springing
+        // back toward a resting height through the follow camera's easing.
+        param->rest_min_height = param->min_height;
+        param->rest_max_height = param->max_height;
+        if (stick_yaw != 0) {
+            rot_cancel |= CAMERA_ROT_CANCEL_AUTO_MOVE;
+        }
+    }
+    // Other camera owners never inherit wheel zoom limits.
+    if (zoom_keeps && zoom.active) {
         zoom.Move(*this, *scene, control, player_rot, polys, poly_count);
     } else {
         MoveCamera(&control, player_rot, polys, poly_count);
     }
+    param->rest_min_height = rest_min_height;
+    param->rest_max_height = rest_max_height;
+    rot_cancel = saved_rot_cancel;
 
-    if (!fresh || control.rot_back || (ConfigGet().mouse_zoom && look.zoom_reset) || !owns ||
-        (look.yaw == 0 && look.pitch == 0) || !std::isfinite(look.yaw) || !std::isfinite(look.pitch)) {
+    // Stick deflection sets an angular rate per logic tick, with no queued turn
+    // or distance-dependent acceleration. Follow movement keeps its own easing.
+    const float yaw = look.yaw + stick_yaw;
+    const float pitch = look.pitch + stick_pitch;
+    if (!fresh || reset || !owns ||
+        (yaw == 0 && pitch == 0) || !std::isfinite(yaw) || !std::isfinite(pitch)) {
         return;
     }
 
     // The retail collection encloses the old eye and cannot cover a mouse flick.
     // Collect the full current/pending orbit before validating a continuous turn.
     float radius = 5;
-    for (auto pair : {
+    for (const auto [eye, target] : {
              std::pair{pos,      ref     },
              std::pair{next_pos, next_ref}
     }) {
         float squared = 0;
         for (int i = 0; i < 3; ++i) {
-            squared += (pair.first[i] - pair.second[i]) * (pair.first[i] - pair.second[i]);
+            squared += (eye[i] - target[i]) * (eye[i] - target[i]);
         }
         radius = std::max(radius, std::sqrt(squared) + 5.0f);
     }
@@ -157,10 +188,128 @@ PORT_OVERRIDE void CCameraControl::MoveCamera(CPadControl *pad, float *player_ro
     if (count < 0 || count >= 512) {
         return;
     }
-    if (MouseCameraYaw(*this, look.yaw, orbit_polys, count) != 0) {
+    if (MouseCameraYaw(*this, yaw, orbit_polys, count) != 0) {
         CancelRotBack();
     }
-    MouseCameraPitch(*this, look.pitch, orbit_polys, count, zoom_owns ? zoom.HeightScale(*this) : 1.0f);
+    MouseCameraPitch(*this, pitch, orbit_polys, count, zoom_keeps ? zoom.HeightScale(*this) : 1.0f);
+    // Direct motion is proved against the camera's data; a far zoom also keeps
+    // the walls only the characters' collision knows out of the drawn view.
+    if (zoom_keeps && zoom.active) {
+        zoom.KeepVisible(*this, *scene, polys, poly_count);
+    }
+}
+
+// Retail body, with the height ratio divided as the EE FPU divides it.
+PORT_OVERRIDE void CCameraControl::MoveCamera(Control *control, float *player_rot, CCPoly *polys, int poly_count) {
+    CameraCtrlParam *active = nullptr;
+    float            follow[4];
+    float            follow_offset[4];
+    float            to_target[4];
+    float            direction[4];
+    float            correction[4];
+    float            distance = NAN;
+    float            turn = NAN;
+    float            rise = NAN;
+
+    if (!control_on) {
+        return;
+    }
+
+    active = GetActiveParam();
+    GetFollow(follow);
+    GetFollowOffset(follow_offset);
+    sceVu0AddVector(next_ref, follow, follow_offset);
+    sceVu0SubVector(to_target, next_ref, next_pos);
+    to_target[1] = 0.0f;
+    sceVu0Normalize(direction, to_target);
+    mgZeroVector(correction);
+    distance = mgDistVector(to_target);
+
+    if (distance <= 0.0f) {
+        distance = 1.0f;
+        to_target[2] = 1.0f;
+        direction[2] = 1.0f;
+    }
+
+    if (distance < active->min_dist) {
+        sceVu0ScaleVector(correction, direction, distance - active->min_dist);
+    }
+
+    if (distance > active->max_dist) {
+        sceVu0ScaleVector(correction, direction, distance - active->max_dist);
+    }
+
+    {
+        float effective = NAN;
+        float min_dist = active->min_dist;
+        effective = min_dist;
+
+        if (distance < min_dist) {
+            effective = distance;
+        }
+
+        turn = (control->rot * min_dist) / effective;
+    }
+
+    if (turn != 0.0f) {
+        Rotate(turn);
+    }
+
+    rise = control->height;
+    active->height += rise;
+
+    active->height = std::max(active->height, active->min_height);
+
+    active->height = std::min(active->height, active->max_height);
+
+    if (rise == 0.0f) {
+        if (active->rest_min_height > active->height) {
+            active->height += (active->rest_min_height - active->height) / 20.0f;
+        }
+
+        if (active->rest_max_height < active->height) {
+            active->height += (active->rest_max_height - active->height) / 20.0f;
+        }
+    }
+
+    {
+        float near_distance = active->min_dist;
+        float far_distance = active->max_dist;
+        float near_height = active->near_height;
+        float far_height = active->far_height;
+        // Fishing's cast-point camera pins min_dist == max_dist. The EE FPU returns a signed FLT_MAX
+        // there, which the equal heights then zero; a host division gives inf * 0 = NaN, the camera
+        // is lost for good and the cast-point screen shows only the clear colour.
+        float ratio = vu0::Div(distance - near_distance, far_distance - near_distance);
+        correction[1] = vu0::Sat(near_height + vu0::Sat(ratio * (far_height - near_height)));
+    }
+    next_pos[1] = next_ref[1] + active->height;
+    mgAddVector(next_pos, correction);
+
+    if (control->rot_back && !(rot_cancel & CAMERA_ROT_CANCEL_ROT_BACK)) {
+        RotBack(player_rot[1] - std::numbers::pi_v<float>);
+    }
+
+    if (rot_back) {
+        float angle = mgAngleInterpolate(GetAngle(), rot_back_angle, 1.0f, 0);
+        SetRotate(angle);
+
+        if (mgAngleCmp(angle, rot_back_angle, 0.1f) == 0) {
+            rot_back = false;
+        }
+    }
+
+    if (!active->no_check) {
+        CheckGround(polys, poly_count);
+
+        if (turn != 0.0f || (rot_cancel & CAMERA_ROT_CANCEL_AUTO_MOVE)) {
+            CheckCollision(polys, poly_count);
+            return;
+        }
+
+        CheckCollision(polys, poly_count);
+        AutoMove(polys, poly_count);
+    }
 }
 
 PORT_OVERRIDE void CCameraControl::Step(int frames) {

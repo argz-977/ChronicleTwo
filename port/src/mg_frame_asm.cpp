@@ -7,6 +7,7 @@
 #include "mg_math.hpp"
 #include "mglib.hpp"
 #include "mglib_port.hpp"
+#include "platform/model_assets.hpp"
 #include "stubs/mg_frame.hpp"
 #include "vu0_lanes.hpp"
 
@@ -24,7 +25,7 @@ void MulMatrices(float (*out)[4], const float (*lhs)[4], const float (*rhs)[4]) 
         vu0::Transform(product[i], rhs, lhs[i]);
     }
 
-    memcpy(out, product, sizeof(product));
+    std::memcpy(out, product, sizeof(product));
 }
 
 void TransformCorners(float (*out)[4], const float (*corners)[4], const float (*m)[4]) {
@@ -34,7 +35,7 @@ void TransformCorners(float (*out)[4], const float (*corners)[4], const float (*
         vu0::Transform(result[c], m, corners[c]);
     }
 
-    memcpy(out, result, sizeof(result));
+    std::memcpy(out, result, sizeof(result));
 }
 
 // Rows 0-2 are scaled column by column; the translation row is kept as it is.
@@ -94,9 +95,9 @@ void test2(float *out_max, float *out_min) {
 
 int mgInsideScreen(float (*corners)[4], float (*matrix)[4], float *out_max, float *out_min) {
     mgRENDER_INFO *render_info = &mgRenderInfo;
-    float product[4][4];
-    float transformed[8][4];
-    float divided[8][4];
+    float          product[4][4];
+    float          transformed[8][4];
+    float          divided[8][4];
 
     MulMatrices(product, matrix, render_info->world_screen_rel);
     TransformCorners(transformed, corners, product);
@@ -108,14 +109,16 @@ int mgInsideScreen(float (*corners)[4], float (*matrix)[4], float *out_max, floa
 
 void mgCFrame::GetLocalMatrix(float (*matrix)[4]) {
     if (use_srt) {
-        float(*destination)[4] = matrix;
-        float *scale_vec;
-        float(*source)[4];
-
-        source = trans_matrix;
-        scale_vec = scale;
-
-        ScaleColumns(destination, source, scale_vec);
+        if (model_assets::UsesStandardScaleOrder(this)) {
+            for (int column = 0; column < 3; ++column) {
+                for (int row = 0; row < 4; ++row) {
+                    matrix[column][row] = trans_matrix[column][row] * scale[column];
+                }
+            }
+            sceVu0CopyVector(matrix[3], trans_matrix[3]);
+        } else {
+            ScaleColumns(matrix, trans_matrix, scale);
+        }
         sceVu0FVECTOR translation;
         if (rot_type & MG_FRAME_ROT_LOCAL_ORIGIN) {
             sceVu0CopyVector(translation, matrix[3]);
@@ -148,6 +151,23 @@ void mgCFrame::GetLocalMatrix(float (*matrix)[4]) {
     }
 }
 
+PORT_OVERRIDE void mgCFrame::Initialize() {
+    model_assets::ForgetFrame(this);
+    elder = brother = child = parent = nullptr;
+    sceVu0UnitMatrix(lw_matrix);
+    sceVu0UnitMatrix(trans_matrix);
+    name = nullptr;
+    rot_type = 0;
+    reference = 0;
+    visual = nullptr;
+    attr = nullptr;
+    frame_num = 0;
+    frame_list = nullptr;
+    init_matrix = nullptr;
+    bound = nullptr;
+    mgCObject::Initialize();
+}
+
 void mgCFrame::GetBBoardMatrix(int mode, float (*matrix)[4], mgRENDER_INFO *info) {
     float position[4];
     float to_eye[4];
@@ -159,7 +179,7 @@ void mgCFrame::GetBBoardMatrix(int mode, float (*matrix)[4], mgRENDER_INFO *info
     scale[0] = mgDistVector(world[0]);
     scale[1] = mgDistVector(world[0]);
     scale[2] = mgDistVector(world[0]);
-    memcpy(position, world[3], sizeof(position));
+    std::memcpy(position, world[3], sizeof(position));
     sceVu0UnitMatrix(matrix);
 
     if (mode & 2) {
@@ -210,51 +230,29 @@ void mgCFrame::GetLWMatrix(float (*matrix)[4]) {
     }
 
     if (changed == 0) {
-        mgCFrame *frame = parent;
-
-        if (frame == NULL) {
+        // The cached matrix holds unless an ancestor has changed.
+        const mgCFrame *node = parent;
+        while (node != nullptr && node->changed == 0) {
+            node = node->parent;
+        }
+        if (node == nullptr) {
             sceVu0CopyMatrix(matrix, lw_matrix);
             return;
-        }
-
-        mgCFrame *node = frame;
-
-        while (node != NULL) {
-            if (node->changed != 0) {
-                break;
-            }
-
-            frame = node->parent;
-
-            if (frame == NULL) {
-                sceVu0CopyMatrix(matrix, lw_matrix);
-                return;
-            }
-
-            node = frame;
         }
     }
 
     ClearChildFlag();
     GetLocalMatrix(local_matrix);
 
-    if (parent == NULL) {
+    if (parent == nullptr) {
         sceVu0CopyMatrix(lw_matrix, local_matrix);
         sceVu0CopyMatrix(matrix, lw_matrix);
-        changed = 0;
     } else {
         parent->GetLWMatrix(parent_matrix);
-        float(*b)[4];
-        float(*a)[4];
-        float(*dst)[4];
-        a = parent_matrix;
-        b = local_matrix;
-        dst = lw_matrix;
-        MulMatrices(dst, b, a);
-        memcpy(matrix, dst, sizeof(float[4][4]));
-
-        changed = 0;
+        MulMatrices(lw_matrix, local_matrix, parent_matrix);
+        std::memcpy(matrix, lw_matrix, sizeof(float[4][4]));
     }
+    changed = 0;
 }
 
 void mgCFrame::GetLWMatrixTopBottom(float (*matrix)[4]) {
@@ -269,7 +267,7 @@ void mgCFrame::GetLWMatrixTopBottom(float (*matrix)[4]) {
     if (changed == 0) {
         mgCFrame *parent_frame = parent;
 
-        if (parent_frame == 0) {
+        if (parent_frame == nullptr) {
             sceVu0CopyMatrix(matrix, lw_matrix);
             return;
         }
@@ -284,101 +282,62 @@ void mgCFrame::GetLWMatrixTopBottom(float (*matrix)[4]) {
     GetLocalMatrix(local_matrix);
     mgCFrame *parent = this->parent;
 
-    if (parent == 0) {
+    if (parent == nullptr) {
         sceVu0CopyMatrix(lw_matrix, local_matrix);
         sceVu0CopyMatrix(matrix, lw_matrix);
     } else {
         sceVu0CopyMatrix(parent_matrix, parent->lw_matrix);
-        float(*b)[4];
-        float(*a)[4];
-        float(*dst)[4];
-        a = parent_matrix;
-        b = local_matrix;
-        dst = lw_matrix;
-        MulMatrices(dst, b, a);
-        memcpy(matrix, dst, sizeof(float[4][4]));
+        MulMatrices(lw_matrix, local_matrix, parent_matrix);
+        std::memcpy(matrix, lw_matrix, sizeof(float[4][4]));
     }
 
     changed = 0;
 }
 
 int mgCFrame::GetDrawRect(mgVu0FBOX *rect, mgCDrawManager *manager) {
-    sceVu0FMATRIX lw;
-    sceVu0FVECTOR rect_max = {0.0f, 0.0f, 0.0f, 0.0f};
-    sceVu0FVECTOR rect_min = {0.0f, 0.0f, 0.0f, 0.0f};
-    sceVu0FMATRIX screen_matrix;
-    mgVu0FBOX child_rect;
-    mgCFrameAttr *draw_attr;
-    int visible;
-    mgRENDER_INFO *info;
-    mgCFrame *frame;
-    float left;
-    float top;
-    int billboard;
-    int draw_child;
-
-    if (manager == NULL) {
+    if (manager == nullptr) {
         manager = &mgDrawManager;
     }
 
-    info = manager->render_info;
-    draw_attr = attr;
+    mgRENDER_INFO      *info = manager->render_info;
+    const mgCFrameAttr *draw_attr = attr != nullptr ? attr : &dmy_attr;
+    sceVu0FMATRIX       lw;
 
-    if (draw_attr == NULL) {
-        draw_attr = &dmy_attr;
-    }
-
-    billboard = MG_FRAME_BILLBOARD_NONE;
-
-    if (attr != NULL) {
-        billboard = this->attr->billboard;
-    }
-
-    if (billboard != MG_FRAME_BILLBOARD_NONE) {
-        GetBBoardMatrix(billboard, lw, info);
+    if (attr != nullptr && attr->billboard != MG_FRAME_BILLBOARD_NONE) {
+        GetBBoardMatrix(attr->billboard, lw, info);
     } else {
         GetLWMatrixTopBottom(lw);
     }
 
-    visible = 0;
+    sceVu0FVECTOR rect_max = {0.0f, 0.0f, 0.0f, 0.0f};
+    sceVu0FVECTOR rect_min = {0.0f, 0.0f, 0.0f, 0.0f};
+    int           visible = (draw_attr->draw & MG_FRAME_DRAW_VISIBLE) && visual != nullptr && bound != nullptr;
 
-    if (draw_attr->draw & MG_FRAME_DRAW_VISIBLE) {
-        visible = 1;
-    }
-
-    if (visual == NULL || bound == NULL) {
-        visible = 0;
-    }
-
-    do {
-        if (!visible) {
-            break;
-        }
-
+    if (visible) {
+        sceVu0FMATRIX screen_matrix;
+        float         transformed[8][4];
+        float         divided[8][4];
         mgMulMatrix(screen_matrix, info->world_screen_rel, lw);
-        float transformed[8][4];
-        float divided[8][4];
         TransformCorners(transformed, bound->corner, screen_matrix);
         DivideByW(divided, transformed);
         BoxOf(divided, rect_max, rect_min);
 
         // Cull against what the target shows, not the 4:3 screen: a wider window shows more at the sides.
-        visible = 0;
         const mgPortExtent extent = mgPortVisibleExtent();
-        left = extent.left - 0.5f * mgScreenWidth;
-        top = extent.top - 0.5f * mgScreenHeight;
-        float right = extent.right - 0.5f * mgScreenWidth;
-        float bottom = extent.bottom - 0.5f * mgScreenHeight;
+        const float        left = extent.left - 0.5f * mgScreenWidth;
+        const float        top = extent.top - 0.5f * mgScreenHeight;
+        const float        right = extent.right - 0.5f * mgScreenWidth;
+        const float        bottom = extent.bottom - 0.5f * mgScreenHeight;
+        visible = rect_min[0] <= right && rect_max[0] >= left && rect_min[1] <= bottom && rect_max[1] >= top &&
+                  rect_max[3] >= info->clip_min[2];
 
-        if (rect_min[0] <= right && rect_max[0] >= left && rect_min[1] <= bottom && rect_max[1] >= top &&
-            rect_max[3] >= info->clip_min[2]) {
-            visible = 1;
+        if (visible) {
             rect_min[0] += mgScreenWidth / 2;
             rect_max[0] += mgScreenWidth / 2;
             rect_min[1] += mgScreenHeight / 2;
             rect_max[1] += mgScreenHeight / 2;
         }
-    } while (0);
+    }
 
     if (visible) {
         sceVu0CopyVector(rect->max, rect_max);
@@ -389,14 +348,10 @@ int mgCFrame::GetDrawRect(mgVu0FBOX *rect, mgCDrawManager *manager) {
         return visible;
     }
 
-    for (frame = child; frame != NULL; frame = frame->brother) {
-        draw_child = 1;
-
-        if (frame->attr != NULL && (frame->attr->draw & MG_FRAME_DRAW_SKIP_BY_PARENT)) {
-            draw_child = 0;
-        }
-
-        if (draw_child && frame->GetDrawRect(&child_rect, NULL)) {
+    for (mgCFrame *frame = child; frame != nullptr; frame = frame->brother) {
+        mgVu0FBOX child_rect{};
+        if ((frame->attr == nullptr || !(frame->attr->draw & MG_FRAME_DRAW_SKIP_BY_PARENT)) &&
+            frame->GetDrawRect(&child_rect, nullptr)) {
             if (!visible) {
                 sceVu0CopyVector(rect_max, child_rect.max);
                 sceVu0CopyVector(rect_min, child_rect.min);

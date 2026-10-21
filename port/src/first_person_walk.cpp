@@ -13,7 +13,6 @@
 #include "subgame.hpp"
 #include "userdata.hpp"
 
-extern sceVu0FVECTOR PortTownSavedEye asm("EditCtrl_SavedEye");
 extern sceVu0FVECTOR PortDungeonSavedEye asm("DngMain_SavedEye");
 
 namespace {
@@ -35,8 +34,8 @@ InputKeyboardMovement FirstPersonWalkStick(InputKeyboardMovement keys, float hea
     }
     const float x = -keys.x * std::cos(heading) - keys.y * std::sin(heading);
     const float z = keys.x * std::sin(heading) - keys.y * std::cos(heading);
-    return {x * std::cos(camera_angle) - z * std::sin(camera_angle),
-            x * std::sin(camera_angle) + z * std::cos(camera_angle)};
+    return {.x = x * std::cos(camera_angle) - z * std::sin(camera_angle),
+            .y = x * std::sin(camera_angle) + z * std::cos(camera_angle)};
 }
 
 bool TownFirstPersonOwns(CScene *scene, CPadControl *pad) {
@@ -92,8 +91,8 @@ void FirstPersonShiftSavedEye(float *saved, const float *before, const float *af
     }
 }
 
-// The retail eye routines read these float getters. Keep controller look while
-// keyboard movement travels through the independent channel and normal solver.
+// The retail eye routines read these float getters; keyboard movement goes through its own channel,
+// so controller look still works.
 PORT_OVERRIDE float CGamePad::GetLXf() {
     if (this == &GamePad__2 && walking_script) {
         return script_stick.x;
@@ -102,7 +101,7 @@ PORT_OVERRIDE float CGamePad::GetLXf() {
         CGamePad look = *this;
         look.pad[0].left_x = InputGetLookPad(0).left_x;
         const float stick = look.GetLX() / 128.0f;
-        return stick != 0 ? stick : float(On(PAD_RIGHT) - On(PAD_LEFT));
+        return stick != 0 ? stick : static_cast<float>(On(PAD_RIGHT) - On(PAD_LEFT));
     }
     return GetLX() / 128.0f;
 }
@@ -115,7 +114,7 @@ PORT_OVERRIDE float CGamePad::GetLYf() {
         CGamePad look = *this;
         look.pad[0].left_y = InputGetLookPad(0).left_y;
         const float stick = look.GetLY() / 128.0f;
-        return stick != 0 ? stick : float(On(PAD_DOWN) - On(PAD_UP));
+        return stick != 0 ? stick : static_cast<float>(On(PAD_DOWN) - On(PAD_UP));
     }
     return GetLY() / 128.0f;
 }
@@ -130,14 +129,15 @@ bool TownFirstPersonWalk(CScene *scene, CPadControl *pad) {
     }
     auto         *camera = static_cast<CCameraControl *>(scene->GetCamera(0));
     auto         *chara = scene->GetCharacter(scene->player_chara);
-    sceVu0FVECTOR before, after;
+    sceVu0FVECTOR before;
+    sceVu0FVECTOR after;
     chara->GetPosition(before);
     const auto  stick = FirstPersonWalkStick(keys, PortEditEyeHeading, camera->GetAngle());
     CPadControl movement = *pad;
     movement.analog[PAD_ANALOG_LEFT_X_2].value = stick.x;
     movement.analog[PAD_ANALOG_LEFT_Y_2].value = stick.y;
-    // Only the movement helper sees WALK. It retains speed, gravity, collisions,
-    // landing and map events. A door/ladder event may deliberately end eye view.
+    // Only the movement helper sees WALK, keeping speed, gravity, collisions, landing and map events.
+    // A door or ladder event may end eye view.
     PortEditViewMode = EDIT_VIEW_MODE_WALK;
     PortEditCharaControl(scene, &movement);
     chara->GetPosition(after);
@@ -160,8 +160,8 @@ bool DungeonFirstPersonCheckEvents(CCameraControl &camera) {
         !DngMainScene->GetMapEvent(position, MAP_EVENT_CHECK_TOUCH, &event)) {
         return false;
     }
-    // Restore the translated follow eye before retail's next field event pass.
-    // The normal event runner keeps its health, status and event-priority gates.
+    // Restore the translated follow eye before retail's next field event pass, whose runner keeps its
+    // health, status and event-priority gates.
     ResetEyeView(MainChara__2);
     return true;
 }
@@ -179,14 +179,15 @@ void DungeonFirstPersonWalk(CCameraControl &camera) {
     walking_chara = MainChara__2;
     walking_scene = DngMainScene;
     walking_read = InputGetMouseLook().read;
-    sceVu0FVECTOR before, after;
+    sceVu0FVECTOR before;
+    sceVu0FVECTOR after;
     MainChara__2->GetPosition(before);
     script_stick = FirstPersonWalkStick(keys, viewAngleH__2, camera.GetAngle());
     const CPadControl saved_control = PadCtrl;
     const auto        saved_pad = GamePad__2.pad[0];
     const auto        saved_previous = GamePad__2.previous_pad[0];
-    // Run only locomotion: no attack, item, menu or lock-on button leaks into the
-    // action script while the player is hidden in first person.
+    // Run only locomotion: no attack, item, menu or lock-on button reaches the action script while
+    // the player is hidden in first person.
     for (auto &button : PadCtrl.btn) {
         button.value = 0;
     }

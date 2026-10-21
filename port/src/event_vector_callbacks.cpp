@@ -23,7 +23,7 @@ void Vector(float *out, const RS_STACKDATA *slots) {
     out[3] = 1.0f;
 }
 
-int Distance(RS_STACKDATA *stack, int) {
+int Distance(RS_STACKDATA *stack, int /*unused*/) {
     float vector[4];
     Vector(vector, stack);
     if (stack[3].type == RS_PTR) {
@@ -32,8 +32,9 @@ int Distance(RS_STACKDATA *stack, int) {
     return true;
 }
 
-int DistanceBetween(RS_STACKDATA *stack, int) {
-    float from[4], to[4];
+int DistanceBetween(RS_STACKDATA *stack, int /*unused*/) {
+    float from[4];
+    float to[4];
     Vector(from, stack);
     Vector(to, stack + 3);
     if (stack[6].type == RS_PTR) {
@@ -55,8 +56,10 @@ int AttributeStatus(RS_STACKDATA *stack, int argc) {
 }
 
 int SetFramePosition(RS_STACKDATA *stack, int argc) {
-    int   slot, handle, frames = 0;
-    char *name;
+    int   slot = 0;
+    int   handle = 0;
+    int   frames = 0;
+    char *name = nullptr;
     float offset[4]{};
     switch (argc) {
         case 3:

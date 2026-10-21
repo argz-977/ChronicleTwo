@@ -19,7 +19,7 @@ struct GaugeEmission {
     uint64_t            life = 0;
     uint64_t            content = 0;
     uint64_t            rage = 0;
-    int                 hp = 0, max_hp = 0, screen = 0;
+    int                 max_hp = 0, screen = 0;
     char                brackets = 0, label = 0;
     ScreenOverlayAnchor anchor;
 };
@@ -38,7 +38,7 @@ std::unordered_map<CLockOnModel *, TargetEmission>  targets;
 uint64_t                                            next_generation = 0;
 
 gfx::Interp2D Tag(const void *identity, uint64_t generation) {
-    return {static_cast<gfx::InterpKey>(reinterpret_cast<uintptr_t>(identity)), generation};
+    return {.key = static_cast<gfx::InterpKey>(reinterpret_cast<uintptr_t>(identity)), .generation = generation};
 }
 } // namespace
 
@@ -175,7 +175,6 @@ PORT_OVERRIDE void CEnemyLifeGage::Draw(int hide_gekirin) {
     // the entire gauge away from the still-interpolating monster.
     if (emission.max_hp != max_hp || emission.screen != screen) {
         emission.content = ++next_generation;
-        emission.hp = hp;
         emission.max_hp = max_hp;
         emission.screen = screen;
     }
@@ -228,12 +227,12 @@ PORT_OVERRIDE void CEnemyLifeGage::Draw(int hide_gekirin) {
         prim.Texture(TEX_SystenFrame);
         int x = position[0] - half_width;
         u32 top = position[1] - 12;
-        for (int i = 0; i < ENEMY_LIFE_GAGE_GEKIRIN_MAX; ++i) {
+        for (auto &i : gekirin) {
             // These are screen-space marks, including the break-away bounce.
             // Flush each mark while its key is active: disappearing neighbours
             // must not change its identity or inherit its additive halo.
-            gfx::Interp2DScope interpolation(Tag(&gekirin[i], emission.rage));
-            gekirin[i].Draw(&prim, x, top);
+            gfx::Interp2DScope interpolation(Tag(&i, emission.rage));
+            i.Draw(&prim, x, top);
             prim.Flush();
             x += 8;
         }
@@ -248,7 +247,7 @@ PORT_OVERRIDE void CLockOnModel::DrawMess(int tex_block) {
     if (!mes->MakeAnd3DPosSet(name, pos, 0, -48)) {
         mes->draw_speed = mes->GetDrawSpeedDef();
         mes->mes_no = -1;
-        mes->text_ptr = 0;
+        mes->text_ptr = nullptr;
         mes->open = 0;
         mes->fade = 0;
         mes->fukidashi_centre_x = -1;

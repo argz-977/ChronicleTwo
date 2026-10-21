@@ -22,6 +22,8 @@ add_executable(darkchronicle_tests ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp ${TEST_S
 target_sources(darkchronicle_tests PRIVATE ${KZ_ROOT}/src/cpp/gfx/tim2.cpp)
 set_target_properties(darkchronicle_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 target_include_directories(darkchronicle_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/config_parity_test.cpp
+    PROPERTIES INCLUDE_DIRECTORIES "${CT_STB_IMAGE_INCLUDE_DIR}")
 set(LOCAL_LAYOUT_PROBES ${CMAKE_CURRENT_BINARY_DIR}/local_layout_probes.hpp)
 add_custom_command(OUTPUT ${LOCAL_LAYOUT_PROBES}
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/port/local_layout_probes.py
@@ -40,12 +42,14 @@ target_link_libraries(darkchronicle_tests PRIVATE GTest::gtest nlohmann_json::nl
 # pipelines or create a device per case take longer than 5 s under a parallel run, on lavapipe and on Windows, so they get at least 30 s, or CT_TEST_TIMEOUT when it is larger.
 # Cases that need a Vulkan device carry the gpu label: hosted runners have none and exclude them with -LE gpu.
 set(CT_TEST_TIMEOUT 5 CACHE STRING "Seconds a test case may run before it is cut off")
-set(CT_GPU_SLOW_TIMEOUT 30)
+set(CT_GPU_SLOW_TIMEOUT 30 CACHE STRING "Seconds a case in CT_GPU_SLOW_TESTS may run before it is cut off")
 if(CT_TEST_TIMEOUT GREATER CT_GPU_SLOW_TIMEOUT)
     set(CT_GPU_SLOW_TIMEOUT ${CT_TEST_TIMEOUT})
 endif()
 # These cases share renderer suites but only inspect CPU data and must run on hosted CI.
 set(CT_CPU_TESTS
+    GameplayTimingSites.*
+    GameplayTimingChapter.*
     MgVisual.FaceMeshListAndStrip
     MglibProjection.DepthRoundTrip
     ScreenEffect.DepthOfFieldLevelSizesFollowRetailCascade
@@ -60,14 +64,20 @@ set(CT_GPU_SLOW_TESTS
     MgTextureGpu.*
     MenuIconGpu.*
     MgTanimeGpu.*
-    GfxMisc.PipelineCache)
+    NativeRenderState.*
+    PersistentMesh.*
+    GfxMisc.PipelineCache
+    MovieGlue.ThirtyFramesOfL5LogoThroughTheMovieTexture
+    MovieTextureGpu.*)
 set(CT_GPU_TESTS
     TargetPresentation.*
     PickupPresentation.RetailEmissionsTagCoinsAbsAndFloatingItems
+    HealingPresentation.*
     DamagePresentation.RetailDamageInterpolatesProjectedBounceAndOpacity
     DamagePresentation.Score2InterpolatesAndReusedSlotsStayNewest
     DamagePresentation.SpriteHealClippingAndPause
     DamagePresentation.RealAtlasProjectedEndpoints
+    QuickChangeBannerPresentation.*
     MglibAspect.*
     MglibPresent.*
     MglibSeam.*
@@ -84,11 +94,21 @@ set(CT_GPU_TESTS
     MenuDrawGrab.*
     GfxMisc.*
     GfxTim2.UploadRgbaAndIndexed
-    GfxValidation.DeliberateMisuseIsCaught
-    MovieGlue.ThirtyFramesOfL5LogoThroughTheMovieTexture)
+    GfxValidation.DeliberateMisuseIsCaught)
 list(JOIN CT_GPU_SLOW_TESTS ":" CT_GPU_SLOW_FILTER)
 list(JOIN CT_GPU_TESTS ":" CT_GPU_FILTER)
 list(JOIN CT_CPU_TESTS ":" CT_CPU_FILTER)
+set(CT_CONFIG_PARITY_FILTER "NativeConfigParity.*")
+set(CT_CORPUS_FILTER "NativeSubtitles.MatchesEveryOfflineSubtitleChapter:MovieGlue.L5LogoPlaysOnTheClockWithItsSoundtrack")
+set(CT_CORPUS_TIMEOUT 120)
+if(CT_TEST_TIMEOUT GREATER CT_CORPUS_TIMEOUT)
+    set(CT_CORPUS_TIMEOUT ${CT_TEST_TIMEOUT})
+endif()
+# The original configuration corpus also compares every embedded texture mip and variant.
+set(CT_CONFIG_PARITY_TIMEOUT 600)
+if(CT_TEST_TIMEOUT GREATER CT_CONFIG_PARITY_TIMEOUT)
+    set(CT_CONFIG_PARITY_TIMEOUT ${CT_TEST_TIMEOUT})
+endif()
 
 # Catch direct device helpers and renderer-owning fixtures in new test suites at configure time.
 execute_process(COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/port/gpu_test_labels.py
@@ -99,25 +119,42 @@ execute_process(COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/port/g
 if(NOT gpu_label_result EQUAL 0)
     message(FATAL_ERROR "${gpu_label_output}${gpu_label_error}")
 endif()
+# Listing the cases runs the binary's static initialisers, which can outlast CMake's 5 second default on a
+# loaded CI runner.
 gtest_discover_tests(darkchronicle_tests
     DISCOVERY_MODE PRE_TEST
-    TEST_FILTER -PlatformClock.*:${CT_GPU_FILTER}:${CT_GPU_SLOW_FILTER}:${CT_CPU_FILTER}
+    DISCOVERY_TIMEOUT 60
+    TEST_FILTER -PlatformClock.*:${CT_GPU_FILTER}:${CT_GPU_SLOW_FILTER}:${CT_CPU_FILTER}:${CT_CORPUS_FILTER}:${CT_CONFIG_PARITY_FILTER}
     PROPERTIES TIMEOUT ${CT_TEST_TIMEOUT})
 gtest_discover_tests(darkchronicle_tests
     DISCOVERY_MODE PRE_TEST
+    DISCOVERY_TIMEOUT 60
     TEST_FILTER PlatformClock.*
     PROPERTIES TIMEOUT ${CT_TEST_TIMEOUT} RUN_SERIAL TRUE)
 gtest_discover_tests(darkchronicle_tests
     DISCOVERY_MODE PRE_TEST
+    DISCOVERY_TIMEOUT 60
+    TEST_FILTER ${CT_CORPUS_FILTER}
+    PROPERTIES TIMEOUT ${CT_CORPUS_TIMEOUT} RUN_SERIAL TRUE LABELS "cpu;corpus")
+gtest_discover_tests(darkchronicle_tests
+    DISCOVERY_MODE PRE_TEST
+    DISCOVERY_TIMEOUT 60
+    TEST_FILTER ${CT_CONFIG_PARITY_FILTER}
+    PROPERTIES TIMEOUT ${CT_CONFIG_PARITY_TIMEOUT} RUN_SERIAL TRUE LABELS "cpu;corpus")
+gtest_discover_tests(darkchronicle_tests
+    DISCOVERY_MODE PRE_TEST
+    DISCOVERY_TIMEOUT 60
     TEST_FILTER ${CT_CPU_FILTER}
-    PROPERTIES TIMEOUT ${CT_TEST_TIMEOUT})
+    PROPERTIES TIMEOUT ${CT_TEST_TIMEOUT} LABELS cpu)
 
 gtest_discover_tests(darkchronicle_tests
     DISCOVERY_MODE PRE_TEST
+    DISCOVERY_TIMEOUT 60
     TEST_FILTER ${CT_GPU_FILTER}-${CT_GPU_SLOW_FILTER}:${CT_CPU_FILTER}
     PROPERTIES TIMEOUT ${CT_TEST_TIMEOUT} LABELS gpu)
 gtest_discover_tests(darkchronicle_tests
     DISCOVERY_MODE PRE_TEST
+    DISCOVERY_TIMEOUT 60
     TEST_FILTER ${CT_GPU_SLOW_FILTER}-${CT_CPU_FILTER}
     PROPERTIES TIMEOUT ${CT_GPU_SLOW_TIMEOUT} LABELS gpu)
 

@@ -3,7 +3,7 @@ file(WRITE ${one_frame_script} [=[
 include("${EMPTY_DATA_FIXTURE}")
 ct_empty_data_fixture("${ROOT}" "${DATA_VERSION_SOURCE}")
 file(MAKE_DIRECTORY "${ROOT}/save")
-file(WRITE "${ROOT}/save/config.json" "{\"video\":{\"interpolation\":false}}")
+file(WRITE "${ROOT}/config.json" "{\"video\":{\"interpolation\":false}}")
 file(REMOVE "${ROOT}/frame.png" "${ROOT}/frame-display-0.png" "${ROOT}/frame-display-1.png")
 execute_process(COMMAND "${EXE}" --headless --offscreen --data "${ROOT}/data" --save "${ROOT}/save"
     --frames 1 --screenshot "${ROOT}/frame.png" --screenshot-display 2

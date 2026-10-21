@@ -1,15 +1,56 @@
 #include "common.h"
 
 #include <cstring>
+#include <utility>
+#include <vector>
 
 #include "gameutil.hpp"
 #include "mg_math.hpp"
 #include "stubs/gameutil.hpp"
 #include "vu0_lanes.hpp"
 
+namespace {
 // Retail clears OldSkinFrame after each skin pass; DeformMesh is its only caller, so clearing at the motion's
 // first skin list starts every pass from the same state.
-static mgCFrame *cached_skin_frame;
+mgCFrame *cached_skin_frame;
+
+// One vertex's accumulated deformation, aligned like the quadword it replaces.
+struct alignas(16) DeformVertex {
+    float xyzw[4];
+};
+
+// Accumulated deformation of each vertex of the skin being deformed. Retail's 800-entry def_vrtx took
+// its vertex numbers from the mesh's key lists unchecked; this table is sized to the skin's vertices.
+std::vector<DeformVertex> deform_vertices;
+
+// Whether the segment from..to, bounded by seg_max/seg_min, crosses poly; the crossing is stored in point.
+bool SegmentCrossesPoly(CCPoly &poly, float *from, float *to, const float *seg_max, const float *seg_min, float *point) {
+    float poly_min[4];
+    float poly_max[4];
+    float offset[4];
+
+    mgVectorMaxMin(poly_max, poly_min, poly.vertex[0], poly.vertex[1], poly.vertex[2]);
+
+    if (seg_max[0] < poly_min[0] || seg_max[1] < poly_min[1] || seg_max[2] < poly_min[2]) {
+        return false;
+    }
+
+    if (!(seg_min[0] <= poly_max[0]) || !(seg_min[1] <= poly_max[1]) || !(seg_min[2] <= poly_max[2])) {
+        return false;
+    }
+
+    sceVu0SubVector(offset, from, poly.vertex[0]);
+    const float d0 = sceVu0InnerProduct(poly.normal, offset);
+    sceVu0SubVector(offset, to, poly.vertex[0]);
+    const float d1 = sceVu0InnerProduct(poly.normal, offset);
+
+    if ((d0 > 0.0f && d1 > 0.0f) || (d0 < 0.0f && d1 < 0.0f)) {
+        return false;
+    }
+
+    return mgIntersectionPoint_line_poly3(from, to, poly.vertex[0], poly.vertex[1], poly.vertex[2], poly.normal, point) != 0;
+}
+} // namespace
 
 void testVUnew(float (*matrix)[4], float *vertex, float *weight, float *accum, float *out) {
     float transformed[4];
@@ -44,13 +85,13 @@ Mot_List *MotionProc2(mgCFrame *root, tagMOTION_TYPE *motion, tagFRAME_INF *fram
     float                 bone_base[4][4];
     float                 moved[4];
     float                 weight[4];
-    mgCFrame             *bone;
-    mgCFrame             *skin;
-    unsigned int          i;
-    int                   vertex;
+    mgCFrame             *bone = nullptr;
+    mgCFrame             *skin = nullptr;
+    unsigned int          i = 0;
+    int                   vertex = 0;
 
     if (list == motion->skin_list) {
-        cached_skin_frame = NULL;
+        cached_skin_frame = nullptr;
     }
 
     if (list->key_count == 0) {
@@ -62,20 +103,11 @@ Mot_List *MotionProc2(mgCFrame *root, tagMOTION_TYPE *motion, tagFRAME_INF *fram
 
     if (cached_skin_frame != skin) {
         cached_skin_frame = skin;
-        vert = ((mgCVisualMDT *) skin->visual)->vertex;
+        vert = static_cast<mgCVisualMDT *>(skin->visual)->vertex;
 
-        {
-            const float origin[4] = {0.0f, 0.0f, 0.0f, 1.0f};
-            int         remaining;
-            float (*accum)[4];
-
-            remaining = frame_info[list->frame].vertex_count;
-            accum = def_vrtx;
-
-            for (; remaining > 0; remaining--, accum++) {
-                std::memcpy(accum, origin, sizeof(origin));
-            }
-        }
+        deform_vertices.assign(frame_info[list->frame].vertex_count, DeformVertex{
+                                                                         {0.0f, 0.0f, 0.0f, 1.0f}
+        });
 
         skin->GetLWMatrix(tmp_SkinMatrix);
         root->GetLWMatrix(tmp_ChrMatrix);
@@ -95,21 +127,25 @@ Mot_List *MotionProc2(mgCFrame *root, tagMOTION_TYPE *motion, tagFRAME_INF *fram
 
     for (i = 0; i < list->key_count; i++) {
         weight[0] = 0.01f * list->values[i][0];
-        vertex = list->key_frames[i];
+        if (list->key_frames[i] >= deform_vertices.size()) {
+            continue;
+        }
+        vertex = static_cast<int>(list->key_frames[i]);
+        float *accum = deform_vertices[vertex].xyzw;
 
         if (list->type == MOTION_KEY_SKIN_WEIGHTED) {
-            testVUnew(deform, frame_info[list->frame].base_vertices[vertex], weight, def_vrtx[vertex], vert[vertex]);
+            testVUnew(deform, frame_info[list->frame].base_vertices[vertex], weight, accum, vert[vertex]);
         } else {
             sceVu0ApplyMatrix(moved, deform, frame_info[list->frame].base_vertices[vertex]);
             moved[3] = 0.0f;
-            def_vrtx[vertex][0] += moved[0];
-            def_vrtx[vertex][1] += moved[1];
-            def_vrtx[vertex][2] += moved[2];
-            def_vrtx[vertex][0] = vu0::Div(def_vrtx[vertex][0], def_vrtx[vertex][3]);
-            def_vrtx[vertex][1] = vu0::Div(def_vrtx[vertex][1], def_vrtx[vertex][3]);
-            def_vrtx[vertex][2] = vu0::Div(def_vrtx[vertex][2], def_vrtx[vertex][3]);
-            sceVu0CopyVectorXYZ(vert[vertex], def_vrtx[vertex]);
-            def_vrtx[vertex][3] += 1.0f;
+            accum[0] += moved[0];
+            accum[1] += moved[1];
+            accum[2] += moved[2];
+            accum[0] = vu0::Div(accum[0], accum[3]);
+            accum[1] = vu0::Div(accum[1], accum[3]);
+            accum[2] = vu0::Div(accum[2], accum[3]);
+            sceVu0CopyVectorXYZ(vert[vertex], accum);
+            accum[3] += 1.0f;
         }
     }
 
@@ -117,69 +153,26 @@ Mot_List *MotionProc2(mgCFrame *root, tagMOTION_TYPE *motion, tagFRAME_INF *fram
 }
 
 int CheckHit(CollisionInfo *collision, float *from, float *to, float *hit, int closest, int mask) {
-    float   point[4];
-    float   diff[4];
-    float   poly_min[4];
-    float   poly_max[4];
-    float   seg_max[4];
-    float   seg_min[4];
-    float   offset[4];
-    float   best_dist;
-    float   d0;
-    float   d1;
-    float   dist;
-    int     i;
-    int     best;
-    CCPoly *poly;
-    int     count;
-    int     has_best;
-
-    if (collision == NULL) {
+    if (collision == nullptr) {
         return 0;
     }
 
-    best = -1;
-    has_best = false;
+    float seg_max[4];
+    float seg_min[4];
     mgVectorMaxMin(seg_max, seg_min, from, to);
 
-    poly = collision->polys;
-    count = collision->count;
-
-    if (poly == NULL || count == 0) {
+    CCPoly   *poly = collision->polys;
+    const int count = collision->count;
+    if (poly == nullptr || count == 0) {
         return -1;
     }
 
-    for (i = 0; i < count; i++, poly++) {
-        if (poly->ignore_mask & mask) {
-            continue;
-        }
-
-        mgVectorMaxMin(poly_max, poly_min, poly->vertex[0], poly->vertex[1], poly->vertex[2]);
-
-        if (seg_max[0] < poly_min[0] || seg_max[1] < poly_min[1] || seg_max[2] < poly_min[2]) {
-            continue;
-        }
-
-        if (!(seg_min[0] <= poly_max[0]) || !(seg_min[1] <= poly_max[1]) ||
-            !(seg_min[2] <= poly_max[2])) {
-            continue;
-        }
-
-        sceVu0SubVector(offset, from, poly->vertex[0]);
-        d0 = sceVu0InnerProduct(poly->normal, offset);
-        sceVu0SubVector(offset, to, poly->vertex[0]);
-        d1 = sceVu0InnerProduct(poly->normal, offset);
-
-        if (!(d0 <= 0.0f || d1 <= 0.0f)) {
-            continue;
-        }
-
-        if (d0 < 0.0f && d1 < 0.0f) {
-            continue;
-        }
-
-        if (mgIntersectionPoint_line_poly3(from, to, poly->vertex[0], poly->vertex[1],
-                                           poly->vertex[2], poly->normal, point) == 0) {
+    int   best = -1;
+    bool  has_best = false;
+    float best_dist = 0.0f;
+    for (int i = 0; i < count; i++, poly++) {
+        float point[4];
+        if ((poly->ignore_mask & mask) || !SegmentCrossesPoly(*poly, from, to, seg_max, seg_min, point)) {
             continue;
         }
 
@@ -189,21 +182,13 @@ int CheckHit(CollisionInfo *collision, float *from, float *to, float *hit, int c
             break;
         }
 
-        diff[0] = from[0] - point[0];
-        diff[1] = from[1] - point[1];
-        diff[2] = from[2] - point[2];
-        dist = (diff[0] * diff[0]) + (diff[1] * diff[1]) + (diff[2] * diff[2]);
-
-        if (!has_best) {
-            best_dist = dist;
-            best = i;
-            sceVu0CopyVector(hit, point);
-        } else if (!(best_dist <= dist)) {
+        const float diff[3] = {from[0] - point[0], from[1] - point[1], from[2] - point[2]};
+        const float dist = (diff[0] * diff[0]) + (diff[1] * diff[1]) + (diff[2] * diff[2]);
+        if (!has_best || !(best_dist <= dist)) {
             best_dist = dist;
             best = i;
             sceVu0CopyVector(hit, point);
         }
-
         has_best = true;
     }
 
@@ -211,59 +196,15 @@ int CheckHit(CollisionInfo *collision, float *from, float *to, float *hit, int c
 }
 
 int CheckHits(CollisionInfo *info, float *from, float *to, int max_hits, int *hit_polys, float (*hit_points)[4], int sort, int ignore_mask) {
-    float   point[4];
-    float   poly_min[4];
-    float   poly_max[4];
-    float   seg_max[4];
-    float   seg_min[4];
-    float   offset[4];
-    float   swap[4];
-    float   d0;
-    float   d1;
-    int     i;
-    int     j;
-    int     hits;
-    int     index;
-    CCPoly *poly;
-    int     count;
-
-    hits = 0;
+    float seg_max[4];
+    float seg_min[4];
     mgVectorMaxMin(seg_max, seg_min, from, to);
 
-    poly = info->polys;
-    count = info->count;
-
-    for (i = 0; i < count; i++, poly++) {
-        if (poly->ignore_mask & ignore_mask) {
-            continue;
-        }
-
-        mgVectorMaxMin(poly_max, poly_min, poly->vertex[0], poly->vertex[1], poly->vertex[2]);
-
-        if (seg_max[0] < poly_min[0] || seg_max[1] < poly_min[1] || seg_max[2] < poly_min[2]) {
-            continue;
-        }
-
-        if (!(seg_min[0] <= poly_max[0]) || !(seg_min[1] <= poly_max[1]) ||
-            !(seg_min[2] <= poly_max[2])) {
-            continue;
-        }
-
-        sceVu0SubVector(offset, from, poly->vertex[0]);
-        d0 = sceVu0InnerProduct(poly->normal, offset);
-        sceVu0SubVector(offset, to, poly->vertex[0]);
-        d1 = sceVu0InnerProduct(poly->normal, offset);
-
-        if (!(d0 <= 0.0f || d1 <= 0.0f)) {
-            continue;
-        }
-
-        if (d0 < 0.0f && d1 < 0.0f) {
-            continue;
-        }
-
-        if (mgIntersectionPoint_line_poly3(from, to, poly->vertex[0], poly->vertex[1],
-                                           poly->vertex[2], poly->normal, point) == 0) {
+    int     hits = 0;
+    CCPoly *poly = info->polys;
+    for (int i = 0; i < info->count; i++, poly++) {
+        float point[4];
+        if ((poly->ignore_mask & ignore_mask) || !SegmentCrossesPoly(*poly, from, to, seg_max, seg_min, point)) {
             continue;
         }
 
@@ -281,13 +222,12 @@ int CheckHits(CollisionInfo *info, float *from, float *to, int max_hits, int *hi
         return hits;
     }
 
-    // A descending sort was never written; retail sorts ascending for either sign.
-    for (i = 0; i < hits - 1; i++) {
-        for (j = i + 1; j < hits; j++) {
+    // Retail sorts ascending whatever the sign of sort.
+    for (int i = 0; i < hits - 1; i++) {
+        for (int j = i + 1; j < hits; j++) {
             if (!(hit_points[i][3] <= hit_points[j][3])) {
-                index = hit_polys[i];
-                hit_polys[i] = hit_polys[j];
-                hit_polys[j] = index;
+                std::swap(hit_polys[i], hit_polys[j]);
+                float swap[4];
                 sceVu0CopyVector(swap, hit_points[i]);
                 sceVu0CopyVector(hit_points[i], hit_points[j]);
                 sceVu0CopyVector(hit_points[j], swap);

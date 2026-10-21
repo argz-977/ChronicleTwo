@@ -31,16 +31,18 @@ using namespace dc::vu1;
 namespace {
 
 WaterSurface Surface(float p1 = 2.0f) {
-    return {1.0f, p1, {128.0f, 128.0f, 128.0f, 128.0f}};
+    return {
+        .p0 = 1.0f, .p1 = p1, .colour = {128.0f, 128.0f, 128.0f, 128.0f}
+    };
 }
 
 WaterStripVertex Vertex(Vec4 pos, Vec4 slope) {
-    return {pos, slope};
+    return {.pos = pos, .slope = slope};
 }
 
 // Object z is the eye depth under the identity transform. 100 keeps the fade at 1 (375 / 100 - 0.25 > 1).
 WaterStripVertex FlatAt(float z) {
-    return Vertex({2048.0f, 2048.0f, z, 1.0f}, {0.0f, 0.0f, 0.0f, 1.0f});
+    return Vertex({.x = 2048.0f, .y = 2048.0f, .z = z, .w = 1.0f}, {.x = 0.0f, .y = 0.0f, .z = 0.0f, .w = 1.0f});
 }
 
 } // namespace
@@ -69,7 +71,7 @@ TEST(WaterHost, FlatGridHasNoRefraction) {
 
 TEST(WaterHost, SlopeScalesUvOffsetByP1AndWeightsAlpha) {
     WaterMesh mesh(1);
-    mesh[0] = {FlatAt(100.0f), Vertex({2048.0f, 2048.0f, 100.0f, 1.0f}, {0.5f, -0.25f, 99.0f, 0.6f}),
+    mesh[0] = {FlatAt(100.0f), Vertex({.x = 2048.0f, .y = 2048.0f, .z = 100.0f, .w = 1.0f}, {.x = 0.5f, .y = -0.25f, .z = 99.0f, .w = 0.6f}),
                FlatAt(100.0f)};
 
     std::vector<WaterHostVertex> vertices;
@@ -99,7 +101,7 @@ TEST(WaterHost, FarAndBehindEyeVerticesFadeOut) {
 
 TEST(WaterHost, FadeReadsEyeDepthThroughModelToEye) {
     Mat4 model_to_eye = Identity();
-    model_to_eye.q[3] = {0.0f, 0.0f, 1900.0f, 1.0f};
+    model_to_eye.q[3] = {.x = 0.0f, .y = 0.0f, .z = 1900.0f, .w = 1.0f};
 
     WaterMesh mesh(1);
     mesh[0] = {FlatAt(-1800.0f), FlatAt(-1800.0f), FlatAt(-1800.0f)};
@@ -131,7 +133,7 @@ class PresentRenderer {
 public:
     PresentRenderer(int width, int height) {
         SetEnv("VK_LAYER_VALIDATE_SYNC", "1", 0);
-        WindowConfig window{width, height, true};
+        WindowConfig window{.width = width, .height = height, .headless = true};
         window.vulkan = false;
         WindowInit(window);
 
@@ -176,9 +178,9 @@ struct Pixels {
     uint32_t height = 0;
     gfx::LogicalMapping mapping{};
 
-    const uint8_t *At(float x, float y) const {
-        const size_t px = static_cast<size_t>(x * mapping.scale_x + mapping.offset_x);
-        const size_t py = static_cast<size_t>(y * mapping.scale_y + mapping.offset_y);
+    [[nodiscard]] const uint8_t *At(float x, float y) const {
+        const auto px = static_cast<size_t>(x * mapping.scale_x + mapping.offset_x);
+        const auto py = static_cast<size_t>(y * mapping.scale_y + mapping.offset_y);
         return &rgba[(py * width + px) * 4];
     }
 };

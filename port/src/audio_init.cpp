@@ -6,6 +6,7 @@
 #include <cstring>
 
 #include "audio/mixer.hpp"
+#include "log/log.hpp"
 #include "platform/audio.hpp"
 #include "platform/clock.hpp"
 #include "platform/settings.hpp"
@@ -38,7 +39,7 @@ void RenderTicks() {
     auto         frames = total - g_span_frames;
     g_span_frames = total;
     g_fraction = budget - static_cast<double>(total);
-    std::array<float, 2048> samples;
+    std::array<float, 2048> samples{};
     while (frames > 0) {
         const int count = static_cast<int>(std::min<std::int64_t>(frames, samples.size() / 2));
         mixer.Render(samples.data(), count);
@@ -47,6 +48,9 @@ void RenderTicks() {
 }
 
 void RenderMixer(void *user, float *out, int frames) {
+    // The device thread's first callback readies its log queue, so a later line from it never allocates.
+    thread_local const bool log_ready = (LogThreadReady(), true);
+    static_cast<void>(log_ready);
     // Mixer::Render takes the mixer's own lock, and every game-thread setter takes it too, so the
     // device thread needs no lock of its own here.
     static_cast<audio::Mixer *>(user)->Render(out, frames);

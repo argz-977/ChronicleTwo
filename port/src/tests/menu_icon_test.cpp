@@ -30,7 +30,7 @@ protected:
     CScene                    *saved_scene_ = MenuMainScene;
     sceVif1Packet             *saved_packet_ = mgVif1Packet;
     CSaveData                 *saved_save_ = PortActiveSaveData;
-    CMenuPosDataManage         menu_;
+    CMenuPosDataManage         menu_{};
     std::unique_ptr<CSaveData> save_ = std::make_unique<CSaveData>();
 
     void SetUp() override {
@@ -76,7 +76,7 @@ protected:
         PortActiveSaveData = saved_save_;
     }
 
-    mgCTexture *Enter(char *name, int width, int height, u_long128 *pixels) {
+    static mgCTexture *Enter(char *name, int width, int height, u_long128 *pixels) {
         u_long128 *levels[MG_TEXTURE_LEVEL_MAX] = {pixels};
         return mgTexManager.EnterTexture(0, name, levels, width, height, 32, nullptr, 0, 0);
     }
@@ -84,13 +84,16 @@ protected:
 } // namespace
 
 TEST_F(MenuIconGpu, ActiveIconsRefreshBakedRgbaPixelsAfterInPlaceCopy) {
-    char item_name[] = "itemicon", weapon_name[] = "wepicon";
+    char item_name[] = "itemicon";
+    char weapon_name[] = "wepicon";
     Enter(item_name, 256, 1024, atlas_.data());
     Enter(weapon_name, 256, 1024, atlas_.data());
-    std::array<u_long128, 1024> item_pixels{}, weapon_pixels{};
-    char                       dummy1[] = "icon_dmy1", dummy2[] = "icon_dmy2";
-    mgCTexture                *dest[] = {Enter(dummy1, 64, 64, item_pixels.data()),
-                                         Enter(dummy2, 64, 64, weapon_pixels.data())};
+    std::array<u_long128, 1024> item_pixels{};
+    std::array<u_long128, 1024> weapon_pixels{};
+    char                        dummy1[] = "icon_dmy1";
+    char                        dummy2[] = "icon_dmy2";
+    mgCTexture                 *dest[] = {Enter(dummy1, 64, 64, item_pixels.data()),
+                                          Enter(dummy2, 64, 64, weapon_pixels.data())};
     save_->user_data.chara_data[0].active_item[0].item_no = 1;
     save_->user_data.chara_data[0].equip[0].item_no = 1;
     const auto saved_user = std::make_unique<CUserDataManager>(save_->user_data);
@@ -101,12 +104,13 @@ TEST_F(MenuIconGpu, ActiveIconsRefreshBakedRgbaPixelsAfterInPlaceCopy) {
     EXPECT_EQ(MgTextureLookup(dest[0]).texture, old_handles.texture);
     EXPECT_EQ(MgTextureLookup(dest[0]).palette, gfx::kNullTexture);
     EXPECT_EQ(std::memcmp(saved_user.get(), &save_->user_data, sizeof(CUserDataManager)), 0);
-    // CPU copies already worked before the fix, but the renderer still held dummy pixels.
+    // The renderer's textures, not only the CPU copy, must hold the item pixels.
     EXPECT_EQ(reinterpret_cast<u8 *>(item_pixels.data())[1], 255);
     for (mgCTexture *texture : dest) {
         auto            handles = MgTextureLookup(texture);
         std::vector<u8> pixels;
-        uint32_t        width, height;
+        uint32_t        width = 0;
+        uint32_t        height = 0;
         ASSERT_TRUE(gfx::ReadbackTexture(handles.texture, pixels, width, height));
         EXPECT_EQ(pixels[1], 255);
         EXPECT_EQ(pixels[3], 255);
@@ -140,7 +144,8 @@ TEST_F(MenuIconGpu, ItemDrawSamplesSelectedAtlasCellsInCanonicalAndDisplayFrames
     u8              rgba[] = {128, 128, 128, 128};
     const auto      handles = MgTextureLookup(texture);
     std::vector<u8> original_atlas;
-    uint32_t        width, height;
+    uint32_t        width = 0;
+    uint32_t        height = 0;
     ASSERT_TRUE(gfx::ReadbackTexture(handles.texture, original_atlas, width, height));
     gfx::BeginRecording();
     const u8 clear[] = {0, 0, 0, 255};
@@ -170,10 +175,11 @@ TEST_F(MenuIconGpu, ItemDrawSamplesSelectedAtlasCellsInCanonicalAndDisplayFrames
 }
 
 TEST_F(MenuIconGpu, EffectUsesSelectedBakedRgbaAtlasAndRestoresNormally) {
-    char name[] = "itemicon", variant_name[] = "itemicon_variant";
-    auto *base = Enter(name, 256, 1024, atlas_.data());
+    char                   name[] = "itemicon";
+    char                   variant_name[] = "itemicon_variant";
+    auto                  *base = Enter(name, 256, 1024, atlas_.data());
     std::vector<u_long128> alternate = atlas_;
-    auto *colors = reinterpret_cast<u8 *>(alternate.data());
+    auto                  *colors = reinterpret_cast<u8 *>(alternate.data());
     for (int y = 32; y < 64; ++y) {
         for (int x = 96; x < 128; ++x) {
             u8 *pixel = colors + (y * 256 + x) * 4;

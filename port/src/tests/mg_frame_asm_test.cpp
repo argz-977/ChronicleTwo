@@ -18,9 +18,14 @@ void SetIdentity(float (*m)[4]) {
 
 void SetCube(float (*corners)[4]) {
     const float cube[8][4] = {
-        {-1.0f, -1.0f, -1.0f, 1.0f}, {1.0f, -1.0f, -1.0f, 1.0f}, {-1.0f, 1.0f, -1.0f, 1.0f},
-        {1.0f, 1.0f, -1.0f, 1.0f},   {-1.0f, -1.0f, 1.0f, 1.0f}, {1.0f, -1.0f, 1.0f, 1.0f},
-        {-1.0f, 1.0f, 1.0f, 1.0f},   {1.0f, 1.0f, 1.0f, 1.0f},
+        {-1.0f, -1.0f, -1.0f, 1.0f},
+        {1.0f,  -1.0f, -1.0f, 1.0f},
+        {-1.0f, 1.0f,  -1.0f, 1.0f},
+        {1.0f,  1.0f,  -1.0f, 1.0f},
+        {-1.0f, -1.0f, 1.0f,  1.0f},
+        {1.0f,  -1.0f, 1.0f,  1.0f},
+        {-1.0f, 1.0f,  1.0f,  1.0f},
+        {1.0f,  1.0f,  1.0f,  1.0f},
     };
     memcpy(corners, cube, sizeof(cube));
 }
@@ -28,9 +33,14 @@ void SetCube(float (*corners)[4]) {
 // Corners at w = 1 in the near half (z = -1) and at x, y = +-2 in the far half (z = 1).
 void SetMixedDepthCorners(float (*corners)[4]) {
     const float points[8][4] = {
-        {-1.0f, -1.0f, -1.0f, 1.0f}, {1.0f, -1.0f, -1.0f, 1.0f}, {-1.0f, 1.0f, -1.0f, 1.0f},
-        {1.0f, 1.0f, -1.0f, 1.0f},   {-2.0f, -2.0f, 1.0f, 1.0f}, {2.0f, -2.0f, 1.0f, 1.0f},
-        {-2.0f, 2.0f, 1.0f, 1.0f},   {2.0f, 2.0f, 1.0f, 1.0f},
+        {-1.0f, -1.0f, -1.0f, 1.0f},
+        {1.0f,  -1.0f, -1.0f, 1.0f},
+        {-1.0f, 1.0f,  -1.0f, 1.0f},
+        {1.0f,  1.0f,  -1.0f, 1.0f},
+        {-2.0f, -2.0f, 1.0f,  1.0f},
+        {2.0f,  -2.0f, 1.0f,  1.0f},
+        {-2.0f, 2.0f,  1.0f,  1.0f},
+        {2.0f,  2.0f,  1.0f,  1.0f},
     };
     memcpy(corners, points, sizeof(points));
 }
@@ -267,14 +277,14 @@ TEST(MgFrameAsm, GetLocalMatrixCopiesTransMatrixWhenSrtClear) {
 
 TEST(MgFrameAsm, Test1WithAllCornersEqualGivesCollapsedBox) {
     const float point[4] = {1.0f, 2.0f, 3.0f, 4.0f};
-    float corners[8][4];
-    float screen[4][4];
-    float matrix[4][4];
-    float box_max[4];
-    float box_min[4];
+    float       corners[8][4];
+    float       screen[4][4];
+    float       matrix[4][4];
+    float       box_max[4];
+    float       box_min[4];
 
-    for (int c = 0; c < 8; c++) {
-        memcpy(corners[c], point, sizeof(point));
+    for (auto &corner : corners) {
+        memcpy(corner, point, sizeof(point));
     }
     SetIdentity(screen);
     SetIdentity(matrix);
@@ -289,8 +299,14 @@ TEST(MgFrameAsm, Test1WithAllCornersEqualGivesCollapsedBox) {
 
 TEST(MgFrameAsm, Test2ZeroWKeepsZeroXAndSaturatesOtherXY) {
     const float points[8][4] = {
-        {0.0f, 1.0f, 1.0f, 0.0f}, {2.0f, -1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f, 0.0f},
-        {0.0f, 0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f, 0.0f},  {0.0f, 0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f, 0.0f},
+        {0.0f, 1.0f,  1.0f, 0.0f},
+        {2.0f, -1.0f, 1.0f, 0.0f},
+        {0.0f, 0.0f,  0.0f, 0.0f},
+        {0.0f, 0.0f,  0.0f, 0.0f},
+        {0.0f, 0.0f,  0.0f, 0.0f},
+        {0.0f, 0.0f,  0.0f, 0.0f},
+        {0.0f, 0.0f,  0.0f, 0.0f},
+        {0.0f, 0.0f,  0.0f, 0.0f},
     };
     float corners[8][4];
     float screen[4][4];
@@ -317,14 +333,14 @@ TEST(MgFrameAsm, Test2ZeroWKeepsZeroXAndSaturatesOtherXY) {
 
 TEST(MgFrameAsm, Test2NegativeWDividesXYByMagnitude) {
     const float point[4] = {4.0f, 6.0f, 3.0f, -2.0f};
-    float corners[8][4];
-    float screen[4][4];
-    float matrix[4][4];
-    float box_max[4];
-    float box_min[4];
+    float       corners[8][4];
+    float       screen[4][4];
+    float       matrix[4][4];
+    float       box_max[4];
+    float       box_min[4];
 
-    for (int c = 0; c < 8; c++) {
-        memcpy(corners[c], point, sizeof(point));
+    for (auto &corner : corners) {
+        memcpy(corner, point, sizeof(point));
     }
     SetIdentity(screen);
     SetIdentity(matrix);
@@ -413,9 +429,9 @@ TEST(MgFrameAsm, GetLWMatrixMultipliesChildLocalByParentWorld) {
     child.GetLWMatrix(matrix);
 
     const float expected[4][4] = {
-        {2.0f, 0.0f, 0.0f, 0.0f},
-        {0.0f, 2.0f, 0.0f, 0.0f},
-        {0.0f, 0.0f, 2.0f, 0.0f},
+        {2.0f,  0.0f, 0.0f, 0.0f},
+        {0.0f,  2.0f, 0.0f, 0.0f},
+        {0.0f,  0.0f, 2.0f, 0.0f},
         {11.0f, 0.0f, 0.0f, 1.0f},
     };
     ExpectMatrixEq(matrix, expected);
@@ -458,9 +474,9 @@ TEST(MgFrameAsm, GetLWMatrixTopBottomUsesCachedParentLwMatrix) {
     child.GetLWMatrixTopBottom(matrix);
 
     const float expected[4][4] = {
-        {2.0f, 0.0f, 0.0f, 0.0f},
-        {0.0f, 2.0f, 0.0f, 0.0f},
-        {0.0f, 0.0f, 2.0f, 0.0f},
+        {2.0f,   0.0f, 0.0f, 0.0f},
+        {0.0f,   2.0f, 0.0f, 0.0f},
+        {0.0f,   0.0f, 2.0f, 0.0f},
         {101.0f, 0.0f, 0.0f, 1.0f},
     };
     ExpectMatrixEq(matrix, expected);
@@ -516,9 +532,9 @@ TEST(MgFrameAsm, GetBBoardMatrixWithCameraAtObjectHasNoNaN) {
 }
 
 TEST(MgFrameAsm, GetDrawRectMovesOnScreenBoxToScreenCoordinates) {
-    mgCFrame::BoundInfo bound;
+    mgCFrame::BoundInfo bound{};
     SetCube(bound.corner);
-    mgCVisual visual;
+    mgCVisual    visual;
     mgCFrameAttr attr;
     attr.draw = MG_FRAME_DRAW_VISIBLE;
     attr.billboard = MG_FRAME_BILLBOARD_NONE;
@@ -537,8 +553,8 @@ TEST(MgFrameAsm, GetDrawRectMovesOnScreenBoxToScreenCoordinates) {
     mgScreenWidth = 640;
     mgScreenHeight = 480;
 
-    mgVu0FBOX rect;
-    EXPECT_EQ(frame.GetDrawRect(&rect, NULL), 1);
+    mgVu0FBOX rect{};
+    EXPECT_EQ(frame.GetDrawRect(&rect, nullptr), 1);
     EXPECT_FLOAT_EQ(rect.max[0], 321.0f);
     EXPECT_FLOAT_EQ(rect.max[1], 241.0f);
     EXPECT_FLOAT_EQ(rect.max[2], 1.0f);
@@ -550,9 +566,9 @@ TEST(MgFrameAsm, GetDrawRectMovesOnScreenBoxToScreenCoordinates) {
 }
 
 TEST(MgFrameAsm, GetDrawRectRejectsBoxOffScreen) {
-    mgCFrame::BoundInfo bound;
+    mgCFrame::BoundInfo bound{};
     SetCube(bound.corner);
-    mgCVisual visual;
+    mgCVisual    visual;
     mgCFrameAttr attr;
     attr.draw = MG_FRAME_DRAW_VISIBLE;
     attr.billboard = MG_FRAME_BILLBOARD_NONE;
@@ -572,6 +588,6 @@ TEST(MgFrameAsm, GetDrawRectRejectsBoxOffScreen) {
     mgScreenWidth = 640;
     mgScreenHeight = 480;
 
-    mgVu0FBOX rect;
-    EXPECT_EQ(frame.GetDrawRect(&rect, NULL), 0);
+    mgVu0FBOX rect{};
+    EXPECT_EQ(frame.GetDrawRect(&rect, nullptr), 0);
 }

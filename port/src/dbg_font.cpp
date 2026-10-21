@@ -40,6 +40,7 @@ unsigned long SjisToSerno(unsigned long sjis) {
 }
 
 // Indexed by byte - 0xA1 for the half-width kana range 0xA1..0xDF. 0xB0 has no entry in retail's switch and falls to UNKNOWN.
+// clang-format off
 const unsigned long kKanaSerno[] = {
     0x212C, 0x215F, 0x2160, 0x212B, 0x212F, 0x2237, 0x21E6, 0x21E8, 0x21EA, 0x21EC, 0x21EE, 0x2228, 0x222A, 0x222C, 0x2208,
     DBG_FONT_SERNO_UNKNOWN,
@@ -48,25 +49,26 @@ const unsigned long kKanaSerno[] = {
     0x2224, 0x2225, 0x2226, 0x2227, 0x2229, 0x222B, 0x222D, 0x222E, 0x222F, 0x2230, 0x2231, 0x2232, 0x2234, 0x2238,
     DBG_FONT_SERNO_DAKUTEN, DBG_FONT_SERNO_HANDAKUTEN,
 };
+// clang-format on
 
 unsigned long KanaSerno(unsigned char ch) {
     return kKanaSerno[ch - 0xA1];
 }
 
-}  // namespace
+} // namespace
 
 PORT_OVERRIDE void dbgCJISFont::PrintDirect(int start_x, int start_y, char *format, ...) {
     char  text[0x408];
     char  escape[8];
     char *cursor = text;
-    char  ch;
-    int   length;
+    char  ch = 0;
+    int   length = 0;
 
     x = start_x;
     y = start_y;
     prev_serno = 0;
 
-    va_list args;
+    va_list args{};
     va_start(args, format);
     std::vsnprintf(text, sizeof text, format, args);
     va_end(args);
@@ -99,7 +101,8 @@ PORT_OVERRIDE void dbgCJISFont::PrintDirect(int start_x, int start_y, char *form
                             cursor += 5;
                             back_enable = ~back_enable;
                             break;
-                        } else if (std::memcmp(escape, "ESC[#", 5) == 0) {
+                        }
+                        if (std::memcmp(escape, "ESC[#", 5) == 0) {
                             cursor += 5;
                             shadow_enable = ~shadow_enable;
                             break;
@@ -132,12 +135,12 @@ PORT_OVERRIDE void dbgCJISFont::PrintDirect(int start_x, int start_y, char *form
                 __putc(serno);
                 cursor++;
             } else {
-                // A lead byte with no trail byte before the terminator ends the text; retail read past the terminator.
+                // A lead byte with no trail byte before the terminator ends the text; retail reads past the terminator.
                 if (cursor[1] == '\0') {
                     break;
                 }
 
-                unsigned long sjis = ((unsigned long) byte << 8) | (unsigned char) cursor[1];
+                unsigned long sjis = (static_cast<unsigned long>(byte) << 8) | static_cast<unsigned char>(cursor[1]);
                 cursor += 2;
                 __putc(SjisToSerno(sjis));
             }

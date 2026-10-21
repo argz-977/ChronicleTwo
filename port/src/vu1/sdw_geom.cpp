@@ -10,12 +10,11 @@ bool Finite(const Vec4& v) {
 }
 
 Vec4 Point(const Vec4& v) {
-    return {v.x, v.y, v.z, 1.0f};
+    return {.x = v.x, .y = v.y, .z = v.z, .w = 1.0f};
 }
 
 Vec4 Centroid(const Vec4 p[3]) {
-    return {(p[0].x + p[1].x + p[2].x) / 3.0f, (p[0].y + p[1].y + p[2].y) / 3.0f,
-            (p[0].z + p[1].z + p[2].z) / 3.0f, 0.0f};
+    return {.x = (p[0].x + p[1].x + p[2].x) / 3.0f, .y = (p[0].y + p[1].y + p[2].y) / 3.0f, .z = (p[0].z + p[1].z + p[2].z) / 3.0f, .w = 0.0f};
 }
 
 }  // namespace

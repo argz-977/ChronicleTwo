@@ -30,23 +30,27 @@ void ExpectRel(float got, float want, float rel) {
 }  // namespace
 
 TEST(Vu1Math, MulByIdentityReturnsVector) {
-    ExpectVec(Mul(Identity(), Vec4{1.5f, -2.0f, 3.0f, 4.0f}), Vec4{1.5f, -2.0f, 3.0f, 4.0f});
+    ExpectVec(Mul(Identity(), Vec4{.x = 1.5f, .y = -2.0f, .z = 3.0f, .w = 4.0f}), Vec4{.x = 1.5f, .y = -2.0f, .z = 3.0f, .w = 4.0f});
 }
 
 TEST(Vu1Math, MulTreatsQuadwordsAsColumns) {
-    const Mat4 m{{{2.0f, 0.0f, 0.0f, 0.0f},
-                  {0.0f, 3.0f, 0.0f, 0.0f},
-                  {0.0f, 0.0f, 4.0f, 0.0f},
-                  {10.0f, 20.0f, 30.0f, 1.0f}}};
-    ExpectVec(Mul(m, Vec4{1.0f, 2.0f, 3.0f, 1.0f}), Vec4{12.0f, 26.0f, 42.0f, 1.0f});
+    const Mat4 m{
+        {{.x = 2.0f, .y = 0.0f, .z = 0.0f, .w = 0.0f},
+         {.x = 0.0f, .y = 3.0f, .z = 0.0f, .w = 0.0f},
+         {.x = 0.0f, .y = 0.0f, .z = 4.0f, .w = 0.0f},
+         {.x = 10.0f, .y = 20.0f, .z = 30.0f, .w = 1.0f}}
+    };
+    ExpectVec(Mul(m, Vec4{.x = 1.0f, .y = 2.0f, .z = 3.0f, .w = 1.0f}), Vec4{.x = 12.0f, .y = 26.0f, .z = 42.0f, .w = 1.0f});
 }
 
 // (1e8 + 1) rounds back to 1e8 in binary32, so left-to-right gives 0. A reordered sum gives 1.
 TEST(Vu1Math, MulAccumulatesLeftToRight) {
-    const Mat4 m{{{1e8f, 0.0f, 0.0f, 0.0f},
-                  {1.0f, 0.0f, 0.0f, 0.0f},
-                  {-1e8f, 0.0f, 0.0f, 0.0f},
-                  {0.0f, 0.0f, 0.0f, 0.0f}}};
+    const Mat4 m{
+        {{.x = 1e8f, .y = 0.0f, .z = 0.0f, .w = 0.0f},
+         {.x = 1.0f, .y = 0.0f, .z = 0.0f, .w = 0.0f},
+         {.x = -1e8f, .y = 0.0f, .z = 0.0f, .w = 0.0f},
+         {.x = 0.0f, .y = 0.0f, .z = 0.0f, .w = 0.0f}}
+    };
     EXPECT_FLOAT_EQ(Mul(m, Vec4{1.0f, 1.0f, 1.0f, 1.0f}).x, 0.0f);
 }
 
@@ -55,8 +59,8 @@ TEST(Vu1Math, Dot3IgnoresW) {
 }
 
 TEST(Vu1Math, Cross3SetsWToZero) {
-    ExpectVec(Cross3(Vec4{1.0f, 0.0f, 0.0f, 7.0f}, Vec4{0.0f, 1.0f, 0.0f, 7.0f}),
-              Vec4{0.0f, 0.0f, 1.0f, 0.0f});
+    ExpectVec(Cross3(Vec4{.x = 1.0f, .y = 0.0f, .z = 0.0f, .w = 7.0f}, Vec4{.x = 0.0f, .y = 1.0f, .z = 0.0f, .w = 7.0f}),
+              Vec4{.x = 0.0f, .y = 0.0f, .z = 1.0f, .w = 0.0f});
 }
 
 TEST(Vu1Math, Ftoi0TruncatesTowardZero) {
@@ -131,23 +135,23 @@ TEST(Vu1Math, EditorFogIsConstant255) {
 
 // prog_3dsp section 10: offset 0.5, near_value 1.0, far_value 0.0, scale 8.0.
 TEST(Vu1Math, Prog3dspFogAtPw4ClampsToNearValue) {
-    const Fog f{0.5f, 1.0f, 0.0f, 8.0f};
+    const Fog f{.offset = 0.5f, .near_value = 1.0f, .far_value = 0.0f, .scale = 8.0f};
     EXPECT_FLOAT_EQ(FogValue(f, 1.0f / 4.0f), 1.0f);
 }
 
 TEST(Vu1Math, Prog3dspFogAtPw100ClampsToFarValue) {
-    const Fog f{0.5f, 1.0f, 0.8f, 8.0f};
+    const Fog f{.offset = 0.5f, .near_value = 1.0f, .far_value = 0.8f, .scale = 8.0f};
     EXPECT_FLOAT_EQ(FogValue(f, 1.0f / 100.0f), 0.8f);
 }
 
 TEST(Vu1Math, Prog3dspFarValueAboveNearValueWins) {
-    const Fog f{0.5f, 1.0f, 2.5f, 8.0f};
+    const Fog   f{.offset = 0.5f, .near_value = 1.0f, .far_value = 2.5f, .scale = 8.0f};
     const float v = FogValue(f, 1.0f / 100.0f);
     EXPECT_FLOAT_EQ(v, 2.5f);
     EXPECT_EQ(Ftoi0(v), 2);
 }
 
 TEST(Vu1Math, Prog3dspFogAtPw1Point1ClampsToNearValue) {
-    const Fog f{0.5f, 1.0f, 0.0f, 8.0f};
+    const Fog f{.offset = 0.5f, .near_value = 1.0f, .far_value = 0.0f, .scale = 8.0f};
     EXPECT_FLOAT_EQ(FogValue(f, 1.0f / 1.1f), 1.0f);
 }

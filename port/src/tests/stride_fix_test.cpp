@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <iterator>
 #include <memory>
 #include <vector>
 
@@ -68,7 +69,7 @@ TEST(StrideFix, DrawManagerTablesHoldPointers) {
     u_long128 packets[4] = {};
     // Groups past 8 are the ones a 4-byte stride would collide with.
     const int groups[] = {0, 3, 9, 12, 39, 12};
-    for (std::size_t i = 0; i < sizeof groups / sizeof groups[0]; i++) {
+    for (std::size_t i = 0; i < std::size(groups); i++) {
         manager.AddPacket(groups[i], &commons[i % 4], &packets[i % 4], 0);
     }
 
@@ -76,7 +77,7 @@ TEST(StrideFix, DrawManagerTablesHoldPointers) {
     for (mgSORT_PACKET *node = manager.sort_table[0]; node != nullptr; node = node->next) {
         chain.push_back(node);
     }
-    ASSERT_EQ(chain.size(), sizeof groups / sizeof groups[0]);
+    ASSERT_EQ(chain.size(), std::size(groups));
 
     manager.PreEndDraw();
 
@@ -106,7 +107,7 @@ TEST(StrideFix, ClearStackWalksPointerArray) {
     constexpr int kStackQuads = 64;
 
     std::vector<std::vector<u_long128>> buffers;
-    std::vector<mgCMemory>              memories(kStackCount);
+    std::vector<mgCMemory>               memories(kStackCount);
     for (int i = 0; i < kStackCount; i++) {
         buffers.push_back(Storage(kStackQuads, 0));
         memories[i].stSetBuffer(buffers[i].data(), kStackQuads);
@@ -144,12 +145,12 @@ TEST(StrideFix, ClearStackWalksPointerArray) {
 }
 
 TEST(StrideFix, TexAnimeGroupAppends) {
-    constexpr int kStackQuads = 256;
+    constexpr int          kStackQuads = 256;
     std::vector<u_long128> storage = Storage(kStackQuads, 0);
     mgCMemory              stack;
     stack.stSetBuffer(storage.data(), kStackQuads);
 
-    mgCTextureAnime anime;
+    mgCTextureAnime         anime;
     CList<mgCTexAnimeData> *first = anime.NewTexAnimeGroupData(2, &stack);
     CList<mgCTexAnimeData> *second = anime.NewTexAnimeGroupData(2, &stack);
 

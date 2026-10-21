@@ -28,7 +28,7 @@ float Intensity(float slope) {
 }
 
 void Shade(uint8_t rgba[4], float slope) {
-    const uint8_t value = static_cast<uint8_t>(vu0::Ftoi(Intensity(slope)));
+    const auto value = static_cast<uint8_t>(vu0::Ftoi(Intensity(slope)));
     rgba[0] = value;
     rgba[1] = value;
     rgba[2] = value;
@@ -38,7 +38,7 @@ void Shade(uint8_t rgba[4], float slope) {
 } // namespace
 
 PORT_OVERRIDE void CWaveTable::CreateTexture(mgCTexture *output_texture) {
-    if (output_texture == NULL) {
+    if (output_texture == nullptr) {
         return;
     }
 
@@ -48,25 +48,25 @@ PORT_OVERRIDE void CWaveTable::CreateTexture(mgCTexture *output_texture) {
 
     mgSetPkFrameBuffer(output_texture);
     mgCDrawPrim prim;
-    prim.Initialize(NULL, NULL);
+    prim.Initialize(nullptr, nullptr);
     prim.DepthTestEnable(0);
     prim.ZMask(MG_Z_MASK_MASKED);
     prim.Shading(1);
     prim.AlphaBlendEnable(1);
 
-    const float cell_width = (float) output_texture->width / 23.0f;
-    const float cell_height = (float) output_texture->height / 23.0f;
-    const float origin_x = (float) mgScreenOffx;
-    const float origin_y = (float) mgScreenOffy;
+    const float cell_width = static_cast<float>(output_texture->width) / 23.0f;
+    const float cell_height = static_cast<float>(output_texture->height) / 23.0f;
+    const auto  origin_x = static_cast<float>(mgScreenOffx);
+    const auto  origin_y = static_cast<float>(mgScreenOffy);
     prim.Begin2();
 
     float row_offset = 0.0f;
 
     for (int row = 0; row < WAVE_TABLE_DIM - 1; row++, row_offset += 1.0f) {
-        const float *line = height[current][row];
-        const float *next_line = height[current][(row + 1) % WAVE_TABLE_DIM];
+        const float               *line = height[current][row];
+        const float               *next_line = height[current][(row + 1) % WAVE_TABLE_DIM];
         std::vector<gfx::Vertex2D> strip;
-        float column_offset = 0.0f;
+        float                      column_offset = 0.0f;
 
         for (int column = 0; column < WAVE_TABLE_DIM; column++, column_offset += 1.0f) {
             const int sample_column = column >= WAVE_TABLE_DIM - 1 ? 0 : column;

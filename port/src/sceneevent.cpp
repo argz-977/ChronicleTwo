@@ -9,40 +9,40 @@
 
 // Named local, not an anonymous union: an anonymous union cannot hold a member with a user-provided constructor.
 PORT_OVERRIDE void CScene::DrawSky(int sky_index) {
-    float camera_info[4];
-    float sun_position[4];
-    float moon_position[4];
-    float lighting_ratio[8];
-    float sun_ratio[8];
+    float            camera_info[4];
+    float            sun_position[4];
+    float            moon_position[4];
+    float            lighting_ratio[8];
+    float            sun_ratio[8];
     CMapLightingInfo lighting;
-    float      sky_color_a[4];
-    float      sky_color_b[4];
-    CMapSky   *sky;
-    mgCCamera *camera;
-    CMap      *map;
+    float            sky_color_a[4];
+    float            sky_color_b[4];
+    CMapSky         *sky = nullptr;
+    mgCCamera       *camera = nullptr;
+    CMap            *map = nullptr;
 
     if (sky_index < 0) {
         sky = GetSky(1);
 
-        if (sky == NULL) {
+        if (sky == nullptr) {
             sky = GetSky(0);
         }
     } else {
         sky = GetSky(sky_index);
     }
 
-    if (sky != NULL) {
+    if (sky != nullptr) {
         mgZeroVector(camera_info);
         camera = GetCamera(active_camera);
 
-        if (camera != NULL) {
+        if (camera != nullptr) {
             camera->GetPos(camera_info);
             camera_info[3] = camera->GetAngleH();
         }
 
         map = GetMap(active_map);
 
-        if (map != NULL && map->map_info.sky_info != 0) {
+        if (map != nullptr && map->map_info.sky_info != 0) {
             camera_info[1] = map->map_info.sky_height;
             map->GetLightInfo(&lighting);
             map->GetLightingRatio(lighting_ratio);

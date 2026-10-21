@@ -1,19 +1,19 @@
-#include "vu1/water_geom.hpp"
-#include "vu1_oracle/water_oracle.hpp"
-
 #include <gtest/gtest.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <vector>
 
+#include "vu1/water_geom.hpp"
+#include "vu1_oracle/water_oracle.hpp"
+
 namespace {
 
 using namespace dc::vu1;
 
 constexpr uint32_t kPass = 0xD0u;
-constexpr int kRows6 = 6;
-constexpr int kColumns6 = 6;
+constexpr int      kRows6 = 6;
+constexpr int      kColumns6 = 6;
 
 WaterParams CommonParams() {
     WaterParams p{};
@@ -24,34 +24,32 @@ WaterParams CommonParams() {
     p.height = 448.0f;
     p.ox = kGsCentre - p.width / 2.0f;
     p.oy = kGsCentre - p.height / 2.0f;
-    p.guard_min = {1.0f, 1.0f, 0.0f, 0.8f};
-    p.guard_max = {4095.0f, 4095.0f, 0.0f, 1000.0f};
-    p.fog = {0.0f, 0.0f, 0.0f, 0.0f};
+    p.guard_min = {.x = 1.0f, .y = 1.0f, .z = 0.0f, .w = 0.8f};
+    p.guard_max = {.x = 4095.0f, .y = 4095.0f, .z = 0.0f, .w = 1000.0f};
+    p.fog = {.offset = 0.0f, .near_value = 0.0f, .far_value = 0.0f, .scale = 0.0f};
     p.fog_enabled = false;
-    p.colour = {128.0f, 128.0f, 128.0f, 128.0f};
+    p.colour = {.x = 128.0f, .y = 128.0f, .z = 128.0f, .w = 128.0f};
     return p;
 }
 
 WaterStripVertex Vertex(Vec4 pos, Vec4 slope) {
-    return WaterStripVertex{pos, slope};
+    return WaterStripVertex{.pos = pos, .slope = slope};
 }
 
 // Neighbour that passes all three tests; used as filler before the vertex under test.
 WaterStripVertex PassingVertex() {
-    return Vertex({2048.0f, 2048.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f, 1.0f});
+    return Vertex({.x = 2048.0f, .y = 2048.0f, .z = 0.0f, .w = 1.0f}, {.x = 0.0f, .y = 0.0f, .z = 0.0f, .w = 1.0f});
 }
 
 // Kick of a strip's third vertex when preceded by two passing vertices.
-bool KickedAsThird(const WaterParams& p, WaterStripVertex third) {
+bool KickedAsThird(const WaterParams &p, WaterStripVertex third) {
     const std::vector<WaterStripVertex> strip{PassingVertex(), PassingVertex(), third};
-    const std::vector<WaterVertex> out = WaterStripTransform(p, strip, kPass, kPass);
+    const std::vector<WaterVertex>      out = WaterStripTransform(p, strip, kPass, kPass);
     return WaterKicks(out)[2];
 }
 
-using Mesh = WaterMesh;
-
 // Grid cell (i, c) read from the strip that owns it. The last grid row belongs to the last strip, r = 1.
-const WaterStripVertex& GridVertex(const Mesh& mesh, int rows, int i, int c) {
+const WaterStripVertex &GridVertex(const WaterMesh &mesh, int rows, int i, int c) {
     const int strip = i == rows - 1 ? i - 1 : i;
     const int r = i - strip;
     return mesh[static_cast<std::size_t>(strip)][static_cast<std::size_t>(2 * c + r)];
@@ -68,15 +66,20 @@ std::vector<float> Heights6x6() {
 }
 
 WaterMeshDesc Desc6x6() {
-    return WaterMeshDesc{{1.0f, -1.0f, 2.0f, 0.0f}, {11.0f, 4.0f, 22.0f, 0.0f}, kRows6, kColumns6};
+    return WaterMeshDesc{
+        .min = {.x = 1.0f,  .y = -1.0f, .z = 2.0f,  .w = 0.0f},
+        .max = {.x = 11.0f, .y = 4.0f,  .z = 22.0f, .w = 0.0f},
+        .rows = kRows6,
+        .columns = kColumns6
+    };
 }
 
-}  // namespace
+} // namespace
 
 // TV1: flat water, zero slope, interior of the screen.
 TEST(Vu1WaterGeom, TV1_FlatInterior) {
     const WaterParams p = CommonParams();
-    const WaterVertex v = WaterTransform(p, {2048.0f, 2048.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f, 1.0f}, kPass, kPass);
+    const WaterVertex v = WaterTransform(p, {.x = 2048.0f, .y = 2048.0f, .z = 0.0f, .w = 1.0f}, {.x = 0.0f, .y = 0.0f, .z = 0.0f, .w = 1.0f}, kPass, kPass);
 
     EXPECT_EQ(v.r, 128);
     EXPECT_EQ(v.g, 128);
@@ -96,7 +99,7 @@ TEST(Vu1WaterGeom, TV1_FlatInterior) {
 // TV2: non-zero slope (refraction and edge weight).
 TEST(Vu1WaterGeom, TV2_SlopeRefractionAndEdgeWeight) {
     const WaterParams p = CommonParams();
-    const WaterVertex v = WaterTransform(p, {2048.0f, 2048.0f, 0.0f, 1.0f}, {0.5f, -0.25f, 99.0f, 0.6f}, kPass, kPass);
+    const WaterVertex v = WaterTransform(p, {.x = 2048.0f, .y = 2048.0f, .z = 0.0f, .w = 1.0f}, {.x = 0.5f, .y = -0.25f, .z = 99.0f, .w = 0.6f}, kPass, kPass);
 
     EXPECT_EQ(v.r, 128);
     EXPECT_EQ(v.g, 128);
@@ -116,7 +119,7 @@ TEST(Vu1WaterGeom, TV2_SlopeRefractionAndEdgeWeight) {
 // TV3: vertex outside the X guard.
 TEST(Vu1WaterGeom, TV3_OutsideXGuardSetsAdc) {
     const WaterParams p = CommonParams();
-    const WaterVertex v = WaterTransform(p, {4200.0f, 2048.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f, 1.0f}, kPass, kPass);
+    const WaterVertex v = WaterTransform(p, {.x = 4200.0f, .y = 2048.0f, .z = 0.0f, .w = 1.0f}, {.x = 0.0f, .y = 0.0f, .z = 0.0f, .w = 1.0f}, kPass, kPass);
 
     EXPECT_EQ(v.r, 128);
     EXPECT_EQ(v.g, 128);
@@ -137,8 +140,8 @@ TEST(Vu1WaterGeom, TV3_OutsideXGuardSetsAdc) {
 // 1/far < Q < 1/near, ADC = 1, triangle not kicked) is not implemented.
 TEST(Vu1WaterGeom, TV4_WWindowInterlockedReading) {
     WaterParams p = CommonParams();
-    p.r.q[3] = {0.0f, 0.0f, 0.0f, 0.7f};
-    const WaterVertex v = WaterTransform(p, {2048.0f, 2048.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f, 1.0f}, kPass, kPass);
+    p.r.q[3] = {.x = 0.0f, .y = 0.0f, .z = 0.0f, .w = 0.7f};
+    const WaterVertex v = WaterTransform(p, {.x = 2048.0f, .y = 2048.0f, .z = 0.0f, .w = 1.0f}, {.x = 0.0f, .y = 0.0f, .z = 0.0f, .w = 1.0f}, kPass, kPass);
 
     EXPECT_EQ(v.r, 128);
     EXPECT_EQ(v.g, 128);
@@ -157,7 +160,7 @@ TEST(Vu1WaterGeom, TV4_WWindowInterlockedReading) {
 
 TEST(Vu1WaterGeom, MeshWeightsRowOverwrite6x6) {
     const std::vector<float> h(kRows6 * kColumns6, 0.0f);
-    const Mesh mesh = BuildWaterMesh(Desc6x6(), h);
+    const WaterMesh          mesh = BuildWaterMesh(Desc6x6(), h);
     ASSERT_EQ(mesh.size(), 5u);
 
     const float expected_rows[kRows6] = {0.0f, 0.6f, 0.3f, 0.3f, 0.6f, 0.0f};
@@ -170,8 +173,13 @@ TEST(Vu1WaterGeom, MeshWeightsRowOverwrite6x6) {
 
 TEST(Vu1WaterGeom, MeshWeightsEdgeStencil8x8) {
     const std::vector<float> h(8 * 8, 0.0f);
-    const WaterMeshDesc desc{{0.0f, 0.0f, 0.0f, 0.0f}, {7.0f, 0.0f, 7.0f, 0.0f}, 8, 8};
-    const Mesh mesh = BuildWaterMesh(desc, h);
+    const WaterMeshDesc      desc{
+        .min = {.x = 0.0f, .y = 0.0f, .z = 0.0f, .w = 0.0f},
+        .max = {.x = 7.0f, .y = 0.0f, .z = 7.0f, .w = 0.0f},
+        .rows = 8,
+        .columns = 8
+    };
+    const WaterMesh mesh = BuildWaterMesh(desc, h);
 
     const float row3[8] = {0.0f, 0.6f, 0.3f, 1.0f, 1.0f, 0.3f, 0.6f, 0.0f};
     for (int c = 0; c < 8; ++c) {
@@ -185,7 +193,7 @@ TEST(Vu1WaterGeom, MeshWeightsEdgeStencil8x8) {
 }
 
 TEST(Vu1WaterGeom, MeshSlopesAtRowZeroAndLastColumn) {
-    const Mesh mesh = BuildWaterMesh(Desc6x6(), Heights6x6());
+    const WaterMesh mesh = BuildWaterMesh(Desc6x6(), Heights6x6());
 
     EXPECT_FLOAT_EQ(GridVertex(mesh, kRows6, 0, 0).slope.x, 0.0f);
     EXPECT_FLOAT_EQ(GridVertex(mesh, kRows6, 0, 0).slope.y, -1.0f);
@@ -203,7 +211,7 @@ TEST(Vu1WaterGeom, MeshSlopesAtRowZeroAndLastColumn) {
 }
 
 TEST(Vu1WaterGeom, MeshPositions) {
-    const Mesh mesh = BuildWaterMesh(Desc6x6(), Heights6x6());
+    const WaterMesh mesh = BuildWaterMesh(Desc6x6(), Heights6x6());
 
     const Vec4 p00 = GridVertex(mesh, kRows6, 0, 0).pos;
     EXPECT_FLOAT_EQ(p00.x, 1.0f);
@@ -230,8 +238,13 @@ TEST(Vu1WaterGeom, MeshPositions) {
 // Open point 9.7: retail drops columns for N >= 28. The PC reading emits every column.
 TEST(Vu1WaterGeom, MeshCoversAllColumnsPast27) {
     const std::vector<float> h(2 * 28, 0.0f);
-    const WaterMeshDesc desc{{0.0f, 0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 27.0f, 0.0f}, 2, 28};
-    const Mesh mesh = BuildWaterMesh(desc, h);
+    const WaterMeshDesc      desc{
+        .min = {.x = 0.0f, .y = 0.0f, .z = 0.0f,  .w = 0.0f},
+        .max = {.x = 0.0f, .y = 0.0f, .z = 27.0f, .w = 0.0f},
+        .rows = 2,
+        .columns = 28
+    };
+    const WaterMesh mesh = BuildWaterMesh(desc, h);
 
     ASSERT_EQ(mesh.size(), 1u);
     ASSERT_EQ(mesh[0].size(), 56u);

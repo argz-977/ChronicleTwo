@@ -50,7 +50,8 @@ void DrawBackdrop(mgCDrawPrim &prim, mgRect<float> rect, mgRect<int> uv, float a
                                                 corner[0] ? u1 : u0, corner[1] ? uv.top + uv.bottom : uv.top, color));
         }
     };
-    const float left = rect.left, right = left + rect.right;
+    const float left = rect.left;
+    const float right = left + rect.right;
     // bg16's last four columns and chr_bg's extra source column are transparent
     // padding. At wide aspects join the reflection to the artwork, not padding.
     const float u_end = wide ? artwork_width : uv.right;
@@ -98,11 +99,11 @@ PORT_OVERRIDE void PrimQuad(mgCTexture *texture, float x, float y, mgRect<int> u
     const bool         cursor = GetNowLoopNo() == LOOP_TITLE && uv.right == 40 && uv.bottom == 24 &&
                                 ((uv.left == 0 && uv.top == 40 && texture == mgTexManager.GetTexture(const_cast<char *>("moji"), -1)) ||
                                  (uv.left == 216 && uv.top == 360));
-    gfx::Interp2DScope tag(cursor ? gfx::Interp2D{MenuMouseNextHandKey(), static_cast<uint64_t>(mgPortFrameCount())} : gfx::CurrentInterp2D());
+    gfx::Interp2DScope tag(cursor ? gfx::Interp2D{.key = MenuMouseNextHandKey(), .generation = static_cast<uint64_t>(mgPortFrameCount())} : gfx::CurrentInterp2D());
     if (cursor) {
         MenuMouseNoteHand(mgPortBinding(texture),
-                          {float(uv.left), float(uv.top), float(uv.right), float(uv.bottom)},
-                          0, 0, alpha);
+                          {.x = static_cast<float>(uv.left), .y = static_cast<float>(uv.top), .w = static_cast<float>(uv.right), .h = static_cast<float>(uv.bottom)},
+                          0, alpha);
     }
     mgCDrawPrim prim;
     SetSpriteEnv(&prim, MENU_SPRITE_ENV_TEXTURE);
@@ -127,8 +128,8 @@ void PrimQuad<float>(mgCDrawPrim *prim, mgRect<float> put_rect, mgRect<int> tex_
         DrawBackdrop(*prim, put_rect, tex_rect, 512);
         return;
     }
-    PrimQuad_f_(prim, mgRect_f_{put_rect.left, put_rect.top, put_rect.right, put_rect.bottom},
-                mgRect_i_{tex_rect.left, tex_rect.top, tex_rect.right, tex_rect.bottom});
+    PrimQuad_f_(prim, mgRect_f_{.left = put_rect.left, .top = put_rect.top, .right = put_rect.right, .bottom = put_rect.bottom},
+                mgRect_i_{.left = tex_rect.left, .top = tex_rect.top, .right = tex_rect.right, .bottom = tex_rect.bottom});
 }
 
 template <>
@@ -140,6 +141,6 @@ void PrimQuad<int>(mgCDrawPrim *prim, mgRect<int> put_rect, mgRect<int> tex_rect
         DrawBackdrop(*prim, mgRect<float>(put_rect.left, put_rect.top, put_rect.right, put_rect.bottom), tex_rect, 700);
         return;
     }
-    PrimQuad_i_(prim, mgRect_i_{put_rect.left, put_rect.top, put_rect.right, put_rect.bottom},
-                mgRect_i_{tex_rect.left, tex_rect.top, tex_rect.right, tex_rect.bottom});
+    PrimQuad_i_(prim, mgRect_i_{.left = put_rect.left, .top = put_rect.top, .right = put_rect.right, .bottom = put_rect.bottom},
+                mgRect_i_{.left = tex_rect.left, .top = tex_rect.top, .right = tex_rect.right, .bottom = tex_rect.bottom});
 }

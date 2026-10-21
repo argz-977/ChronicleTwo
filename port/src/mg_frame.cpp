@@ -41,7 +41,7 @@ PORT_OVERRIDE int mgCFrame::Draw(unsigned int *packet) {
     int            words = 0;
     sceVu0FMATRIX  world;
 
-    if (attr == NULL) {
+    if (attr == nullptr) {
         GetLWMatrixTopBottom(world);
     } else {
         if (attr->billboard != 0) {
@@ -50,12 +50,12 @@ PORT_OVERRIDE int mgCFrame::Draw(unsigned int *packet) {
             GetLWMatrixTopBottom(world);
         }
 
-        while (attr != NULL && (attr->draw & MG_FRAME_DRAW_VISIBLE)) {
-            if (visual == NULL) {
+        while (attr != nullptr && (attr->draw & MG_FRAME_DRAW_VISIBLE)) {
+            if (visual == nullptr) {
                 break;
             }
 
-            if (!attr->no_cull && bound != NULL) {
+            if (!attr->no_cull && bound != nullptr) {
                 sceVu0FVECTOR box_max;
                 sceVu0FVECTOR box_min;
                 test1(bound->corner, info->world_screen_rel, world, box_max, box_min);
@@ -69,10 +69,10 @@ PORT_OVERRIDE int mgCFrame::Draw(unsigned int *packet) {
                 const mgPortExtent extent = mgPortVisibleExtent();
                 const float        centre_x = 0.5f * static_cast<float>(mgScreenWidth);
                 const float        centre_y = 0.5f * static_cast<float>(mgScreenHeight);
-                float visible_max[4] = {extent.right - centre_x, extent.bottom - centre_y, info->screen_box_max[2],
-                                        info->screen_box_max[3]};
-                float visible_min[4] = {extent.left - centre_x, extent.top - centre_y, info->screen_box_min[2],
-                                        info->screen_box_min[3]};
+                float              visible_max[4] = {extent.right - centre_x, extent.bottom - centre_y, info->screen_box_max[2],
+                                                     info->screen_box_max[3]};
+                float              visible_min[4] = {extent.left - centre_x, extent.top - centre_y, info->screen_box_min[2],
+                                                     info->screen_box_min[3]};
 
                 if (TownMouseFixedOwner()) {
                     const float radius = MouseFixedCullRadius(info->projection,
@@ -104,7 +104,7 @@ PORT_OVERRIDE int mgCFrame::Draw(unsigned int *packet) {
             sceVu0CopyVector(info->object_color, attr->color);
             info->plight_hit = 0;
 
-            if (info->plight_enable && attr->point_light && !attr->no_light && bound != NULL) {
+            if (info->plight_enable && attr->point_light && !attr->no_light && bound != nullptr) {
                 sceVu0FMATRIX transposed;
                 sceVu0TransposeMatrix(transposed, world);
                 float scale = mgDistVector(transposed[0]);
@@ -119,11 +119,11 @@ PORT_OVERRIDE int mgCFrame::Draw(unsigned int *packet) {
                 sceVu0ApplyMatrix(center, world, center);
                 mgLIGHT_INFO *light = info->GetpLightInfo();
 
-                for (int i = 0; i < 4; i++) {
-                    if (!(light->point_light[i].power <= 0.0f)) {
-                        float reach = radius + light->point_light[i].range;
+                for (auto &i : light->point_light) {
+                    if (!(i.power <= 0.0f)) {
+                        float reach = radius + i.range;
 
-                        if (!(reach <= mgDistVector(light->point_light[i].pos, center))) {
+                        if (!(reach <= mgDistVector(i.pos, center))) {
                             info->plight_hit = 1;
                             break;
                         }
@@ -133,7 +133,7 @@ PORT_OVERRIDE int mgCFrame::Draw(unsigned int *packet) {
 
             {
                 mgVisualPortObjectScope object_scope(this);
-                words += visual->Draw(packet, world, NULL);
+                words += visual->Draw(packet, world, nullptr);
             }
             break;
         }
@@ -143,14 +143,8 @@ PORT_OVERRIDE int mgCFrame::Draw(unsigned int *packet) {
         }
     }
 
-    for (mgCFrame *node = child; node != NULL; node = node->brother) {
-        int use = 1;
-
-        if (node->attr != NULL && (node->attr->draw & MG_FRAME_DRAW_SKIP_BY_PARENT)) {
-            use = 0;
-        }
-
-        if (use) {
+    for (mgCFrame *node = child; node != nullptr; node = node->brother) {
+        if (node->attr == nullptr || !(node->attr->draw & MG_FRAME_DRAW_SKIP_BY_PARENT)) {
             words += node->Draw(packet + words * 4);
         }
     }

@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
+#include <print>
 #include <vector>
 
 #include "platform/arena.hpp"
@@ -15,10 +16,10 @@ u_long128 *ArenaRoot(const void *key, int quadwords, const char *name) {
 
     static std::vector<const void *> logged;
 
-    if (std::find(logged.begin(), logged.end(), base) == logged.end()) {
+    if (std::ranges::find(logged, base) == logged.end()) {
         logged.push_back(base);
-        std::printf("arena: %s %zu bytes at %p%s\n", name != nullptr && name[0] != '\0' ? name : "?", bytes,
-                    static_cast<void *>(base), IsAbove4GiB(base) ? " (above 4 GiB)" : " (below 4 GiB)");
+        std::println("arena: {} {} bytes at {}{}", name != nullptr && name[0] != '\0' ? name : "?", bytes,
+                     static_cast<void *>(base), IsAbove4GiB(base) ? " (above 4 GiB)" : " (below 4 GiB)");
         // A PS2_UNIMPLEMENTED abort drops buffered stdout, and the mapping is what a failed run is read for.
         std::fflush(stdout);
     }
@@ -32,7 +33,7 @@ u_long128 *ArenaRootFromBuffer(const u_long128 *buffer, int quadwords, const cha
 
     // After the first import the game owns the mapped contents. Rebinding a cursor to the
     // same root must not replace live records with the original static buffer's bytes.
-    if (std::find(imported.begin(), imported.end(), base) == imported.end()) {
+    if (std::ranges::find(imported, base) == imported.end()) {
         std::memcpy(base, buffer, static_cast<std::size_t>(quadwords) * sizeof(u_long128));
         imported.push_back(base);
     }

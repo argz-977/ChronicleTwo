@@ -14,6 +14,7 @@
 #include <utility>
 #include <vector>
 
+#include "log/log.hpp"
 #include "mg_drawprim.hpp"
 #include "mg_drawprim_port.hpp"
 #include "mg_texture_port.hpp"
@@ -23,7 +24,7 @@
 // The GS evaluates UV at integer pixel positions and nearest-samples floor(u), so the texel one past the last
 // covered pixel is never read. Sampling at pixel centres would read it and bleed the neighbouring glyph into the cell.
 std::pair<float, float> mgPortSpriteTexelSpan(float p0, float p1, float u0, float u1) {
-    const bool flipped = p1 < p0;
+    const bool  flipped = p1 < p0;
     const float lo = flipped ? p1 : p0;
     const float hi = flipped ? p0 : p1;
     const float ulo = flipped ? u1 : u0;
@@ -56,6 +57,7 @@ namespace {
 struct PrimRun {
     int                        prim_type = MG_PRIM_POINT;
     bool                       packed = false;
+    bool                       inherited_texture = false; // Begin2 filled in the retained TEX0/TEX1
     uint8_t                    color[4] = {0xFF, 0xFF, 0xFF, 0xFF};
     uint8_t                    fog = 0xFF;
     float                      q = 1.0f;
@@ -68,8 +70,9 @@ struct PrimRun {
     gfx::Primitive             batch_primitive = gfx::Primitive::Quads;
 };
 
-std::unordered_map<const mgCDrawPrim *, PrimRun>        runs;
-std::unordered_set<u_long>                              ignored_direct_registers;
+std::unordered_map<const mgCDrawPrim *, PrimRun> runs;
+std::unordered_set<u_long>                       ignored_direct_registers;
+mgPortPrimSink                                   prim_sink;
 
 // Constructed on first use, so captured mesh owners are released before the renderer's
 // static resource tables at process exit.
@@ -77,7 +80,6 @@ std::unordered_map<const void *, std::function<void()> > &PacketDraws() {
     static std::unordered_map<const void *, std::function<void()> > draws;
     return draws;
 }
-mgPortPrimSink                                           prim_sink;
 
 PrimRun *Find(const mgCDrawPrim *self) {
     const auto it = runs.find(self);
@@ -152,13 +154,13 @@ void AssembleSprite(const mgCDrawPrim &self, PrimRun &run, const gfx::Vertex2D &
         return out;
     };
 
-    float au = a.u;
-    float bu = b.u;
-    float av = a.v;
-    float bv = b.v;
+    float       au = a.u;
+    float       bu = b.u;
+    float       av = a.v;
+    float       bv = b.v;
     const float target_scale = mgPortTextureScale(mgPortCurrentTarget());
-    const auto physical = MgTexturePhysicalExtent(self.texture.tex0_bits);
-    const auto logical = MgTextureLogicalExtent(self.texture.tex0_bits);
+    const auto  physical = MgTexturePhysicalExtent(self.texture.tex0_bits);
+    const auto  logical = MgTextureLogicalExtent(self.texture.tex0_bits);
     const float source_scale = static_cast<float>(physical.width) / logical.width;
 
     if (self.prim.TME != 0 && self.prim.FST != 0 && mgPortFilter(self.texture.tex1_bits) == gfx::Filter::Linear) {
@@ -174,16 +176,18 @@ void AssembleSprite(const mgCDrawPrim &self, PrimRun &run, const gfx::Vertex2D &
         bv -= dv;
     } else if (self.prim.TME != 0 && self.prim.FST != 0 && mgPortFilter(self.texture.tex1_bits) == gfx::Filter::Nearest) {
         std::tie(au, bu) = mgPortSpriteTexelSpan(a.x * target_scale, b.x * target_scale,
-                                               a.u * source_scale, b.u * source_scale);
+                                                 a.u * source_scale, b.u * source_scale);
         std::tie(av, bv) = mgPortSpriteTexelSpan(a.y * target_scale, b.y * target_scale,
-                                               a.v * source_scale, b.v * source_scale);
+                                                 a.v * source_scale, b.v * source_scale);
         // The GPU can interpolate a hair under an exact texel boundary, where the GS takes the texel after it.
         au += kMgPortNearestTexelBias;
         bu += kMgPortNearestTexelBias;
         av += kMgPortNearestTexelBias;
         bv += kMgPortNearestTexelBias;
-        au /= source_scale; bu /= source_scale;
-        av /= source_scale; bv /= source_scale;
+        au /= source_scale;
+        bu /= source_scale;
+        av /= source_scale;
+        bv /= source_scale;
     }
 
     const gfx::Vertex2D quad[4] = {
@@ -277,8 +281,8 @@ void Kick(const mgCDrawPrim &self, PrimRun *run, uint32_t gs_x, uint32_t gs_y, u
     vertex.z = mgPortDepth(gs_z);
 
     if (self.prim.TME != 0 && self.prim.FST == 0) {
-        const float width = static_cast<float>(1u << self.texture.tex0.TW);
-        const float height = static_cast<float>(1u << self.texture.tex0.TH);
+        const auto width = static_cast<float>(1u << self.texture.tex0.TW);
+        const auto height = static_cast<float>(1u << self.texture.tex0.TH);
         vertex.u = run->s / run->q * width;
         vertex.v = run->t / run->q * height;
     } else {
@@ -291,23 +295,32 @@ void Kick(const mgCDrawPrim &self, PrimRun *run, uint32_t gs_x, uint32_t gs_y, u
     Assemble(self, *run, vertex);
 }
 
-}  // namespace
+} // namespace
 
 PORT_OVERRIDE void mgCDrawPrim::Begin2() {
     // A disabled builder skips End2, so state left by an earlier primitive is dropped here.
     runs.insert_or_assign(this, PrimRun{});
     // End/Begin does not write a new colour. HUD bars inherit the preceding batch's tint.
     std::copy_n(mgPortGs().prim_color, 4, runs.at(this).color);
+    // Likewise TEX0: the second weapon's synth gauge re-Initializes its builder and never binds a texture.
+    // Limited to the status board, and to the builder that wrote it: elsewhere a builder whose Texture() got
+    // null (the dungeon loading picture, the boot logo's fade-out) must not pick up an unrelated texture.
+    if (mgPortGs().inherit_prim_texture && texture.tex0_bits == 0 && mgPortGs().prim_tex0 != 0 &&
+        mgPortGs().prim_tex_owner == this) {
+        texture.tex0_bits = mgPortGs().prim_tex0;
+        texture.tex1_bits = mgPortGs().prim_tex1;
+        runs.at(this).inherited_texture = true;
+    }
 
     disabled = 1;
 
-    if (memory == NULL || vif_packet == NULL || draw_manager == NULL) {
+    if (memory == nullptr || vif_packet == nullptr || draw_manager == nullptr) {
         return;
     }
 
     mgRENDER_INFO *render_info = draw_manager->render_info;
 
-    if (render_info == NULL) {
+    if (render_info == nullptr) {
         return;
     }
 
@@ -344,7 +357,7 @@ PORT_OVERRIDE void mgCDrawPrim::BeginPrim2(int type) {
     BeginDma();
 }
 
-PORT_OVERRIDE void mgCDrawPrim::BeginPrim2(int prim_type, u_int data_a, u_int data_b, int unit_count) {
+PORT_OVERRIDE void mgCDrawPrim::BeginPrim2(int prim_type, u_int /*data_a*/, u_int /*data_b*/, int unit_count) {
     packed = 1;
     prim.PRIM = prim_type;
     q = 1.0f;
@@ -368,8 +381,8 @@ PORT_OVERRIDE void mgCDrawPrim::End2() {
 
 PORT_OVERRIDE void mgCDrawPrim::Data(int *data) {
     // write is null on PC unless a caller points it at a buffer, so retail's quadword copy is guarded here.
-    if (write != NULL) {
-        memcpy(write, data, sizeof(u_long128));
+    if (write != nullptr) {
+        std::memcpy(write, data, sizeof(u_long128));
         write++;
     }
 
@@ -383,7 +396,7 @@ PORT_OVERRIDE void mgCDrawPrim::Data(int *data) {
 
     if (!reported) {
         reported = true;
-        std::fprintf(stderr, "mg_drawprim: packed GIF data ignored; its caller needs a port override\n");
+        CT_LOG_WARN(Gfx, "mg_drawprim: packed GIF data ignored; its caller needs a port override");
     }
 }
 
@@ -417,7 +430,6 @@ PORT_OVERRIDE void mgCDrawPrim::Color(int r, int g, int b, int a) {
     run->color[3] = static_cast<uint8_t>(a & 0xFF);
     std::copy_n(run->color, 4, mgPortGs().prim_color);
 }
-
 
 PORT_OVERRIDE void mgCDrawPrim::TextureCrd4(int u, int v) {
     PrimRun *run = Find(this);
@@ -471,7 +483,7 @@ PORT_OVERRIDE void mgCDrawPrim::Direct(unsigned long long reg, unsigned long lon
             break;
         default:
             if (ignored_direct_registers.insert(reg).second) {
-                std::fprintf(stderr, "mg_drawprim: Direct register 0x%x ignored\n", static_cast<unsigned>(reg));
+                CT_LOG_WARN(Gfx, "mg_drawprim: Direct register 0x{:x} ignored", static_cast<unsigned>(reg));
             }
 
             break;
@@ -482,12 +494,22 @@ PORT_OVERRIDE void mgCDrawPrim::Texture(mgCTexture *source) {
     FlushPending(this);
     source = MgTextureDrawVariant(source);
 
-    if (source == NULL) {
+    if (source == nullptr) {
+        // A local builder at a reused stack address can look like the owner. One that asks for a texture
+        // which is not loaded (the boot logo's fade-out, the dungeon loading picture) keeps drawing without one.
+        if (PrimRun *run = Find(this); run != nullptr && run->inherited_texture) {
+            texture.tex0_bits = 0;
+            texture.tex1_bits = 0;
+            run->inherited_texture = false;
+        }
         return;
     }
 
     texture = *source;
     texture.Bilinear(bilinear);
+    mgPortGs().prim_tex0 = texture.tex0_bits;
+    mgPortGs().prim_tex1 = texture.tex1_bits;
+    mgPortGs().prim_tex_owner = this;
 }
 
 PORT_OVERRIDE int mgCDrawManager::ReloadTexture(int group, sceVif1Packet *vif_packet) {
@@ -497,7 +519,7 @@ PORT_OVERRIDE int mgCDrawManager::ReloadTexture(int group, sceVif1Packet *vif_pa
         return 0;
     }
 
-    const int index = draw_order != NULL ? order_index[group] : group;
+    const int index = draw_order != nullptr ? order_index[group] : group;
 
     if (index < 0) {
         return 0;
@@ -507,12 +529,12 @@ PORT_OVERRIDE int mgCDrawManager::ReloadTexture(int group, sceVif1Packet *vif_pa
     return 1;
 }
 
-PORT_OVERRIDE int mgCDrawManager::Draw(int group, sceVif1Packet *) {
+PORT_OVERRIDE int mgCDrawManager::Draw(int group, sceVif1Packet * /*unused*/) {
     if (group < 0 || group >= texture_manager->block_max) {
         return 0;
     }
 
-    if (draw_order != NULL) {
+    if (draw_order != nullptr) {
         group = order_index[group];
     }
 
@@ -522,17 +544,17 @@ PORT_OVERRIDE int mgCDrawManager::Draw(int group, sceVif1Packet *) {
 
     mgSORT_PACKET **list = packet_list[group];
 
-    if (list == NULL) {
+    if (list == nullptr) {
         return 1;
     }
 
-    u_long128 *common = NULL;
+    u_long128 *common = nullptr;
 
     // Packets are called in the reverse of their registration order.
     for (int i = packet_num[group] - 1; i >= 0; --i) {
         const mgSORT_PACKET *entry = list[i];
 
-        if (entry == NULL) {
+        if (entry == nullptr) {
             continue;
         }
 
@@ -554,7 +576,7 @@ void mgPortSetPrimSink(mgPortPrimSink sink) {
 }
 
 void mgPortSetPacketDraw(const void *packet, std::function<void()> draw) {
-    if (packet == NULL) {
+    if (packet == nullptr) {
         return;
     }
 
@@ -570,7 +592,7 @@ void mgPortClearPacketDraws() {
 }
 
 bool mgPortPacketDraw(const void *packet) {
-    if (packet == NULL) {
+    if (packet == nullptr) {
         return false;
     }
 
@@ -585,6 +607,10 @@ bool mgPortPacketDraw(const void *packet) {
     const std::function<void()> draw = it->second;
     draw();
     return true;
+}
+
+void mgPortPrimFlush(const mgCDrawPrim &prim) {
+    FlushPending(&prim);
 }
 
 void mgPortPrimSubmit(mgCDrawPrim &prim, gfx::Primitive primitive, std::span<const gfx::Vertex2D> vertices) {
@@ -643,7 +669,7 @@ void mgPortStripTriangles(std::span<const gfx::Vertex2D> strip, std::vector<gfx:
 
 void mgPortPrimColor(const mgCDrawPrim &prim, uint8_t rgba[4]) {
     static constexpr uint8_t kWhite[4] = {0xFF, 0xFF, 0xFF, 0xFF};
-    const PrimRun *run = Find(&prim);
+    const PrimRun           *run = Find(&prim);
     std::copy_n(run != nullptr ? run->color : kWhite, 4, rgba);
 }
 
@@ -680,16 +706,16 @@ T *AllocTable(mgCMemory *memory, int count) {
     return reinterpret_cast<T *>(memory->Alloc(static_cast<int>((count * sizeof(T) + 15) / 16) + 1));
 }
 
-}  // namespace
+} // namespace
 
 PORT_OVERRIDE void mgCDrawManager::BeginDraw(mgCMemory *new_memory, int *id_list) {
-    memory = new_memory != NULL ? new_memory : packet_memory;
+    memory = new_memory != nullptr ? new_memory : packet_memory;
     group_num = texture_manager->block_max;
     group_max = group_num;
-    order_index = NULL;
-    draw_order = NULL;
+    order_index = nullptr;
+    draw_order = nullptr;
 
-    if (id_list != NULL) {
+    if (id_list != nullptr) {
         order_index = AllocTable<int>(memory, group_max);
 
         for (int i = 0; i < group_max; i++) {
@@ -723,13 +749,13 @@ PORT_OVERRIDE void mgCDrawManager::BeginDraw(mgCMemory *new_memory, int *id_list
 
 PORT_OVERRIDE void mgCDrawManager::ClearTable() {
     for (int i = 0; i < group_num; i++) {
-        packet_list[i] = NULL;
+        packet_list[i] = nullptr;
         unk_14[i] = 0;
         packet_num[i] = 0;
     }
 
     for (int i = 0; i < sort_num; i++) {
-        sort_table[i] = NULL;
+        sort_table[i] = nullptr;
     }
 }
 
@@ -744,7 +770,7 @@ PORT_OVERRIDE void mgCDrawManager::PreEndDraw() {
     }
 
     // Only the first sort bucket is used.
-    for (mgSORT_PACKET *item = sort_table[0]; item != NULL; item = item->next) {
+    for (mgSORT_PACKET *item = sort_table[0]; item != nullptr; item = item->next) {
         *packet_cursor[item->group]++ = item;
     }
 }

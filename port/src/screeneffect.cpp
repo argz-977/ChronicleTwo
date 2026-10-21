@@ -1,14 +1,15 @@
 #include "common.h"
+#include "libgraph.h"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <numbers>
 #include <string>
 #include <vector>
 
 #include "gfx/gfx.hpp"
-#include "libgraph.h"
 #include "mglib.hpp"
 #include "mglib_port.hpp"
 #include "screeneffect.hpp"
@@ -16,9 +17,10 @@
 
 namespace {
 
-constexpr int      kDofColumns = 16;
-constexpr uint64_t kDofTexa = 0x0000008000000080ull;
-constexpr uint64_t kDofZbufMask = 1ull << 32;
+constexpr int kDofColumns = 16;
+// TEXA and the ZBUF write-disable bit that retail's depth-of-field and lens flare prims leave in the GS.
+constexpr uint64_t kGsTexa = 0x0000008000000080ull;
+constexpr uint64_t kGsZbufMask = 1ull << 32;
 
 struct FrameRect {
     int left;
@@ -33,11 +35,11 @@ void DrawBlurLevel(gfx::TextureHandle level, const DepthOfFieldLevel &size, int 
     const float scale_v = static_cast<float>(size.height) / static_cast<float>(frame.height);
     const float column_step = static_cast<float>(frame.width) / static_cast<float>(kDofColumns);
     const float z[2] = {DepthOfFieldDepth(depth), DepthOfFieldDepth(depth + depth / 10.0f)};
-    const float top = static_cast<float>(frame.top);
+    const auto  top = static_cast<float>(frame.top);
     const float bottom = top + static_cast<float>(frame.height);
 
     // Retail's odd levels start with two equal depths at the left edge; the port keeps that seam.
-    int parity = index % 2;
+    int                        parity = index % 2;
     std::vector<gfx::Vertex2D> strip;
     strip.reserve(2 * (kDofColumns + 1));
 
@@ -69,7 +71,7 @@ void DrawBlurLevel(gfx::TextureHandle level, const DepthOfFieldLevel &size, int 
 
     gfx::DrawState state = mgPortDrawState();
     state.blend = true;
-    state.alpha = gfx::GsBlend{0, 1, 0, 1, 0};
+    state.alpha = gfx::GsBlend{.a = 0, .b = 1, .c = 0, .d = 1, .fix = 0};
     state.depth_test = gfx::DepthTest::GEqual;
     state.screen_space = true;
     state.depth_write = false;
@@ -86,9 +88,9 @@ void DrawBlurLevel(gfx::TextureHandle level, const DepthOfFieldLevel &size, int 
 
     // Later draws read the GS mirror, so it holds what retail's prim leaves in the GS.
     mgPortGs().test = SCE_GS_SET_TEST(0, SCE_GS_GEQUAL, 0, 0, 0, 0, 1, SCE_GS_ZGEQUAL);
-    mgPortGs().zbuf |= kDofZbufMask;
+    mgPortGs().zbuf |= kGsZbufMask;
     mgPortGs().alpha = SCE_GS_SET_ALPHA(SCE_GS_ALPHA_CS, SCE_GS_ALPHA_CD, SCE_GS_ALPHA_AS, SCE_GS_ALPHA_CD, 0);
-    mgPortGs().texa = kDofTexa;
+    mgPortGs().texa = kGsTexa;
 }
 
 } // namespace
@@ -104,7 +106,7 @@ DepthOfFieldLevel DepthOfFieldLevelSize(int level, int frame_width, int frame_he
         height_units = height_units * 2 / 3;
     }
 
-    return DepthOfFieldLevel{width_units / 16, height_units / 16};
+    return DepthOfFieldLevel{.width = width_units / 16, .height = height_units / 16};
 }
 
 float DepthOfFieldDepth(float distance) {
@@ -116,8 +118,8 @@ float DepthOfFieldDepth(float distance) {
 }
 
 PORT_OVERRIDE void DepthOfField(int levels, float *depths, mgCTexture *work_texture, float strength) {
-    // Retail draws nothing without its work texture.
-    if (work_texture == NULL) {
+    // Retail draws nothing without its work texture. The focus band suits the walking camera.
+    if (work_texture == nullptr) {
         return;
     }
 
@@ -127,31 +129,31 @@ PORT_OVERRIDE void DepthOfField(int levels, float *depths, mgCTexture *work_text
     }
 
     const mgPortExtent extent = mgPortVisibleExtent();
-    const FrameRect frame{
-        static_cast<int>(std::lround(extent.left)),
-        static_cast<int>(std::lround(extent.top)),
-        static_cast<int>(std::lround(extent.right)) - static_cast<int>(std::lround(extent.left)),
-        static_cast<int>(std::lround(extent.bottom)) - static_cast<int>(std::lround(extent.top)),
+    const FrameRect    frame{
+        .left = static_cast<int>(std::lround(extent.left)),
+        .top = static_cast<int>(std::lround(extent.top)),
+        .width = static_cast<int>(std::lround(extent.right)) - static_cast<int>(std::lround(extent.left)),
+        .height = static_cast<int>(std::lround(extent.bottom)) - static_cast<int>(std::lround(extent.top)),
     };
 
     // Ordinary targets, not frame targets: a frame target is the window's pixel width, so a
     // half-size level made as one would be full size and never blur.
     gfx::TextureHandle source = gfx::NamedRenderTarget("dof frame", frame.width, frame.height, false);
-    gfx::BlitTexture(gfx::kMainTarget, gfx::Rect{frame.left, frame.top, frame.width, frame.height}, source,
-                     gfx::Rect{0, 0, frame.width, frame.height}, gfx::Filter::Linear);
+    gfx::BlitTexture(gfx::kMainTarget, gfx::Rect{.x = frame.left, .y = frame.top, .w = frame.width, .h = frame.height}, source,
+                     gfx::Rect{.x = 0, .y = 0, .w = frame.width, .h = frame.height}, gfx::Filter::Linear);
 
-    const uint8_t alpha = static_cast<uint8_t>(std::clamp(static_cast<int>(128.0f * strength), 0, 255));
-    DepthOfFieldLevel previous{frame.width, frame.height};
+    const uint8_t     alpha = static_cast<uint8_t>(std::clamp(static_cast<int>(128.0f * strength), 0, 255));
+    DepthOfFieldLevel previous{.width = frame.width, .height = frame.height};
 
     for (int level = 0; level < levels; ++level) {
-        const DepthOfFieldLevel size = DepthOfFieldLevelSize(level, frame.width, frame.height);
+        const DepthOfFieldLevel  size = DepthOfFieldLevelSize(level, frame.width, frame.height);
         const gfx::TextureHandle target =
             gfx::NamedRenderTarget("dof level " + std::to_string(level), size.width, size.height, false);
 
         // No half-texel shift before each move: retail's -8 (12.4) is a GS sampling-centre fix, and a
         // Linear blit samples texel centres itself.
-        gfx::BlitTexture(source, gfx::Rect{0, 0, previous.width, previous.height}, target,
-                         gfx::Rect{0, 0, size.width, size.height}, gfx::Filter::Linear);
+        gfx::BlitTexture(source, gfx::Rect{.x = 0, .y = 0, .w = previous.width, .h = previous.height}, target,
+                         gfx::Rect{.x = 0, .y = 0, .w = size.width, .h = size.height}, gfx::Filter::Linear);
         DrawBlurLevel(target, size, level, frame, depths[level], alpha);
 
         source = target;
@@ -163,19 +165,17 @@ namespace {
 
 using FlareColour = std::array<uint8_t, 4>;
 
-constexpr uint64_t kFlareZbufMask = 1ull << 32;
-constexpr uint64_t kFlareTexa = 0x0000008000000080ull;
 // ALPHA of retail's MG_ALPHA_BLEND_ADD, as the GS keeps it.
 constexpr uint64_t kFlareAddAlpha = 0x48;
 constexpr uint64_t kFlareZtstAlways = 1;
 
-constexpr gfx::GsBlend kFlareAdd{0, 2, 0, 1, 0x80};
-constexpr gfx::GsBlend kFlareAddFull{0, 2, 2, 1, 0x80};
-constexpr gfx::GsBlend kFlareSub{2, 0, 0, 1, 0x80};
+constexpr gfx::GsBlend kFlareAdd{.a = 0, .b = 2, .c = 0, .d = 1, .fix = 0x80};
+constexpr gfx::GsBlend kFlareAddFull{.a = 0, .b = 2, .c = 2, .d = 1, .fix = 0x80};
+constexpr gfx::GsBlend kFlareSub{.a = 2, .b = 0, .c = 0, .d = 1, .fix = 0x80};
 // Retail's starburst mask is the alpha its DATE pass tests; DrawState has no DATE, so the mask is
 // multiplied in from the mask target and the alpha put back to what the DATE pass leaves.
-constexpr gfx::GsBlend kFlareScaleByAlpha{1, 2, 0, 2, 0x80};
-constexpr gfx::GsBlend kFlareKeepColour{0, 0, 0, 1, 0x80};
+constexpr gfx::GsBlend kFlareScaleByAlpha{.a = 1, .b = 2, .c = 0, .d = 2, .fix = 0x80};
+constexpr gfx::GsBlend kFlareKeepColour{.a = 0, .b = 0, .c = 0, .d = 1, .fix = 0x80};
 
 static_assert(sizeof(sceGsTex1) == sizeof(uint64_t), "TEX1 is copied as its 64-bit GS value");
 
@@ -209,9 +209,8 @@ void AppendQuad(std::vector<gfx::Vertex2D> &out, float left, float top, float ri
 // Retail's 24-spoke star, alternating between its two radii; the spokes are 12.4 units from the centre.
 void AppendStarburst(std::vector<gfx::Vertex2D> &out, int centre_x, int centre_y, int small_width, int small_height,
                      const FlareColour &centre, const FlareColour &ring) {
-    int radii[2] = {0, 0};
-    radii[0] = (small_width + small_height) * 6;
-    radii[1] = radii[0] - small_width;
+    const int outer = (small_width + small_height) * 6;
+    const int radii[2] = {outer, outer - small_width};
 
     out.push_back(FlareVertex(centre_x / 16.0f, centre_y / 16.0f, 0.0f, 0.0f, centre));
 
@@ -223,7 +222,7 @@ void AppendStarburst(std::vector<gfx::Vertex2D> &out, int centre_x, int centre_y
         const int y = static_cast<int>(static_cast<float>(radii[radius_index]) * cosf(angle));
         out.push_back(FlareVertex((x + centre_x) / 16.0f, (y + centre_y) / 16.0f, 0.0f, 0.0f, ring));
         radius_index = !radius_index;
-        angle += (PI / 12.0f);
+        angle += (std::numbers::pi_v<float> / 12.0f);
     }
 
     out.push_back(FlareVertex(centre_x / 16.0f, (centre_y - radii[radius_index]) / 16.0f, 0.0f, 0.0f, ring));
@@ -267,7 +266,7 @@ float FlareDistance(const LensFlareSun &sun) {
 } // namespace
 
 LensFlareSun LensFlareSunOf(const int screen[4]) {
-    return LensFlareSun{screen[0], screen[1], mgPortDepth(static_cast<uint32_t>(screen[2]))};
+    return LensFlareSun{.x = screen[0], .y = screen[1], .depth = mgPortDepth(static_cast<uint32_t>(screen[2]))};
 }
 
 bool LensFlareInRange(const LensFlareSun &sun) {
@@ -282,8 +281,8 @@ void LensFlareDraw(const LensFlareSun &sun, const float colour[4], const LensFla
     }
 
     // Shares the main depth: the occlusion plate is tested against the scene exactly as on the GS.
-    const uint32_t           frame_w = static_cast<uint32_t>(mgScreenWidth);
-    const uint32_t           frame_h = static_cast<uint32_t>(mgScreenHeight);
+    const auto               frame_w = static_cast<uint32_t>(mgScreenWidth);
+    const auto               frame_h = static_cast<uint32_t>(mgScreenHeight);
     const gfx::TextureHandle entry = mgPortCurrentTarget();
     const gfx::TextureHandle first = gfx::NamedRenderTarget("lens flare a", frame_w, frame_h, true, true);
     const gfx::TextureHandle second = gfx::NamedRenderTarget("lens flare b", frame_w, frame_h, true, true);
@@ -306,20 +305,20 @@ void LensFlareDraw(const LensFlareSun &sun, const float colour[4], const LensFla
     // Texture-space sizes are retail's frame sizes; only the screen-space quads follow the visible extent.
     const int   small_width = mgScreenWidth / 3;
     const int   small_height = mgScreenHeight / 3;
-    const float small_w = static_cast<float>(small_width);
-    const float small_h = static_cast<float>(small_height);
+    const auto  small_w = static_cast<float>(small_width);
+    const auto  small_h = static_cast<float>(small_height);
     const float downsample_right = static_cast<float>(mgScreenWidth * 16 / 3) / 16.0f;
     const float downsample_bottom = static_cast<float>(mgScreenHeight * 16 / 3) / 16.0f;
     const float downsample_u = static_cast<float>(mgScreenWidth * 16 + 0x40) / 16.0f;
     const float downsample_v = static_cast<float>(mgScreenHeight * 16 + 0x40) / 16.0f;
 
-    const gfx::LogicalRect      whole{extent.left, extent.top, visible_width, extent.bottom - extent.top};
-    const FlareColour           black_opaque{0, 0, 0, 0x80};
-    const FlareColour           white_opaque{0xFF, 0xFF, 0xFF, 0x80};
-    const FlareColour           identity{0x80, 0x80, 0x80, 0x80};
-    const FlareColour           clear_mask{0, 0, 0, 0};
-    const int                   centre_x = sun.x / 3;
-    const int                   centre_y = sun.y / 3;
+    const gfx::LogicalRect whole{.x = extent.left, .y = extent.top, .w = visible_width, .h = extent.bottom - extent.top};
+    const FlareColour      black_opaque{0, 0, 0, 0x80};
+    const FlareColour      white_opaque{0xFF, 0xFF, 0xFF, 0x80};
+    const FlareColour      identity{0x80, 0x80, 0x80, 0x80};
+    const FlareColour      clear_mask{0, 0, 0, 0};
+    const int              centre_x = sun.x / 3;
+    const int              centre_y = sun.y / 3;
 
     // Occlusion plate: grey where the sun's depth passes the scene's, black where geometry is nearer.
     gfx::SetRenderTarget(first);
@@ -346,16 +345,20 @@ void LensFlareDraw(const LensFlareSun &sun, const float colour[4], const LensFla
     bool current_is_first = true;
 
     for (int pass = 0; pass < 4; ++pass) {
-        const int     brightness = static_cast<int>(128.0f * (static_cast<float>(4 - pass) / 4.0f));
-        const int     spread = static_cast<int>(10.0f * static_cast<float>(pass + 1));
-        const int     near_edge = spread - 8;
-        const int     far_edge = -8 - spread;
-        const int     wide = small_width * 16;
-        const int     high = small_height * 16;
-        const uint8_t level = static_cast<uint8_t>(brightness);
+        const int         brightness = static_cast<int>(128.0f * (static_cast<float>(4 - pass) / 4.0f));
+        const int         spread = static_cast<int>(10.0f * static_cast<float>(pass + 1));
+        const int         near_edge = spread - 8;
+        const int         far_edge = -8 - spread;
+        const int         wide = small_width * 16;
+        const int         high = small_height * 16;
+        const auto        level = static_cast<uint8_t>(brightness);
         const FlareColour tint{level, level, level, 0x80};
-        const int     offsets[4][2] = {{near_edge, near_edge}, {far_edge, far_edge}, {near_edge, far_edge},
-                                       {far_edge, near_edge}};
+        const int         offsets[4][2] = {
+            {near_edge, near_edge},
+            {far_edge,  far_edge },
+            {near_edge, far_edge },
+            {far_edge,  near_edge}
+        };
 
         std::vector<gfx::Vertex2D> ghosts;
 
@@ -398,8 +401,8 @@ void LensFlareDraw(const LensFlareSun &sun, const float colour[4], const LensFla
 
     // Composite: retail's two identical sprites, so the flare is added twice.
     gfx::SetRenderTarget(entry);
-    const FlareColour composite_colour{FlareByte(colour[0]), FlareByte(colour[1]), FlareByte(colour[2]),
-                                       FlareByte(colour[3] * alpha_scale)};
+    const FlareColour          composite_colour{FlareByte(colour[0]), FlareByte(colour[1]), FlareByte(colour[2]),
+                                                FlareByte(colour[3] * alpha_scale)};
     std::vector<gfx::Vertex2D> composite;
 
     for (int copy = 0; copy < 2; ++copy) {
@@ -413,9 +416,9 @@ void LensFlareDraw(const LensFlareSun &sun, const float colour[4], const LensFla
     // Leave the GS as retail's last sprite does.
     mgPortGsState &gs = mgPortGs();
     gs.test = SCE_GS_SET_TEST(0, SCE_GS_GEQUAL, 0, 0, 0, 0, 1, kFlareZtstAlways);
-    gs.zbuf |= kFlareZbufMask;
+    gs.zbuf |= kGsZbufMask;
     gs.alpha = kFlareAddAlpha;
-    gs.texa = kFlareTexa;
+    gs.texa = kGsTexa;
     gs.tex1 = source.tex1;
     gs.scissor[0] = 0;
     gs.scissor[1] = 0;
@@ -431,11 +434,11 @@ PORT_OVERRIDE void LensFlare(sceVu0IVECTOR screen, sceVu0FVECTOR color, int bank
         return;
     }
 
-    mgTexManager.ReloadTexture(bank, (sceVif1Packet *) NULL);
+    mgTexManager.ReloadTexture(bank, static_cast<sceVif1Packet *>(nullptr));
     mgCTexture *first = mgTexManager.GetTexture(texture_a, bank);
     mgCTexture *second = mgTexManager.GetTexture(texture_b, bank);
 
-    if (first == NULL || second == NULL) {
+    if (first == nullptr || second == nullptr) {
         return;
     }
 

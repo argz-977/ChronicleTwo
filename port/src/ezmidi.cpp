@@ -1,40 +1,54 @@
 #include "common.h"
 
-#include "ezmidi.hpp"
 #include "audio/mixer.hpp"
 #include "audio/trace.hpp"
+#include "ezmidi.hpp"
 
-// Only the scalar commands reach here: the address-carrying ones are served by the host's own paths.
+namespace {
+// EZMIDI commands with a port number in the low four bits.
+enum class EzMidiCommand : int {
+    Play = 0x00,
+    Stop = 0x20,
+    Rewind = 0x30,
+    SetAttribute = 0xA0,
+    SetVolume = 0xB0,
+    SetStereo = 0xC0,
+    IsPlaying = 0x8090,
+    GetVolume = 0x80E0,
+};
+} // namespace
+
 PORT_OVERRIDE int ezMidiInit() {
     return 1;
 }
 
+// Only the scalar commands reach here: the address-carrying ones are served by the host's own paths.
 PORT_OVERRIDE int ezMidi(int command, int argument) {
     audio::Mixer &mixer = audio::DefaultMixer();
     const int     port = command & 0x0F;
 
-    switch (command & ~0x0F) {
-        case 0x00:
+    switch (static_cast<EzMidiCommand>(command & ~0x0F)) {
+        case EzMidiCommand::Play:
             mixer.Play(port);
             return 0;
-        case 0x20:
+        case EzMidiCommand::Stop:
             mixer.Stop(port);
             return 0;
-        case 0x30:
+        case EzMidiCommand::Rewind:
             mixer.Rewind(port, argument);
             return 0;
-        case 0xA0:
+        case EzMidiCommand::SetAttribute:
             mixer.SetAttribute(port, argument);
             return 0;
-        case 0xB0:
+        case EzMidiCommand::SetVolume:
             mixer.SetVolume(port, argument);
             return 0;
-        case 0xC0:
+        case EzMidiCommand::SetStereo:
             mixer.SetStereo(argument != 0);
             return 0;
-        case 0x8090:
+        case EzMidiCommand::IsPlaying:
             return mixer.IsPlaying(port) ? 1 : 0;
-        case 0x80E0:
+        case EzMidiCommand::GetVolume:
             return mixer.Volume(port);
         default:
             audio::Trace("ezmidi: command 0x%x argument 0x%x has no host equivalent", command, argument);

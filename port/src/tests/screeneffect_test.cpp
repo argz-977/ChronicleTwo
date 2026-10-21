@@ -32,7 +32,7 @@ class PresentRenderer {
 public:
     PresentRenderer() {
         SetEnv("VK_LAYER_VALIDATE_SYNC", "1", 0);
-        WindowConfig window{512, 480, true};
+        WindowConfig window{.width = 512, .height = 480, .headless = true};
         window.vulkan = false;
         WindowInit(window);
 
@@ -60,29 +60,45 @@ public:
 
 struct Pixels {
     std::vector<uint8_t> rgba;
-    uint32_t width = 0;
-    uint32_t height = 0;
-    gfx::LogicalMapping mapping{};
+    uint32_t             width = 0;
+    uint32_t             height = 0;
+    gfx::LogicalMapping  mapping{};
 
-    const uint8_t *At(float x, float y) const {
-        const size_t px = static_cast<size_t>(x * mapping.scale_x + mapping.offset_x);
-        const size_t py = static_cast<size_t>(y * mapping.scale_y + mapping.offset_y);
+    [[nodiscard]] const uint8_t *At(float x, float y) const {
+        const auto px = static_cast<size_t>(x * mapping.scale_x + mapping.offset_x);
+        const auto py = static_cast<size_t>(y * mapping.scale_y + mapping.offset_y);
         return &rgba[(py * width + px) * 4];
     }
 };
+
+// Opaque, depth-writing state for full-frame test geometry.
+gfx::DrawState OpaqueDepthWriteState() {
+    gfx::DrawState state = mgPortDrawState();
+    state.depth_test = gfx::DepthTest::Always;
+    state.depth_write = true;
+    state.alpha_test = false;
+    state.blend = false;
+    state.cull = gfx::CullMode::None;
+    return state;
+}
 
 // One-logical-pixel columns alternating black and white: a 2:1 blur averages each pair to grey.
 // The left half sits at near_depth, the right half at far_depth, and both write depth.
 void DrawStripedScene(float near_depth, float far_depth) {
     std::vector<gfx::Vertex2D> quads;
-    const float height = static_cast<float>(mgScreenHeight);
+    const auto                 height = static_cast<float>(mgScreenHeight);
 
     for (int column = 0; column < mgScreenWidth; ++column) {
         const uint8_t value = column % 2 == 0 ? 0 : 255;
-        const float z = column < mgScreenWidth / 2 ? near_depth : far_depth;
-        const float left = static_cast<float>(column);
-        const float right = left + 1.0f;
-        const float corners[4][2] = {{left, 0.0f}, {right, 0.0f}, {right, height}, {left, height}};
+        const float   z = column < mgScreenWidth / 2 ? near_depth : far_depth;
+        const auto    left = static_cast<float>(column);
+        const float   right = left + 1.0f;
+        const float   corners[4][2] = {
+            {left,  0.0f  },
+            {right, 0.0f  },
+            {right, height},
+            {left,  height}
+        };
 
         for (const auto &corner : corners) {
             gfx::Vertex2D vertex{};
@@ -97,13 +113,7 @@ void DrawStripedScene(float near_depth, float far_depth) {
         }
     }
 
-    gfx::DrawState state = mgPortDrawState();
-    state.depth_test = gfx::DepthTest::Always;
-    state.depth_write = true;
-    state.alpha_test = false;
-    state.blend = false;
-    state.cull = gfx::CullMode::None;
-    mgPortDraw2D(gfx::Primitive::Quads, quads, gfx::TextureBinding{}, state);
+    mgPortDraw2D(gfx::Primitive::Quads, quads, gfx::TextureBinding{}, OpaqueDepthWriteState());
 }
 
 double MeanStep(const Pixels &pixels, int x0, int x1, float y) {
@@ -115,10 +125,12 @@ double MeanStep(const Pixels &pixels, int x0, int x1, float y) {
 }
 
 void UseIdentityView() {
-    float view[4][4] = {{1.0f, 0.0f, 0.0f, 0.0f},
-                        {0.0f, 1.0f, 0.0f, 0.0f},
-                        {0.0f, 0.0f, 1.0f, 0.0f},
-                        {0.0f, 0.0f, 0.0f, 1.0f}};
+    float view[4][4] = {
+        {1.0f, 0.0f, 0.0f, 0.0f},
+        {0.0f, 1.0f, 0.0f, 0.0f},
+        {0.0f, 0.0f, 1.0f, 0.0f},
+        {0.0f, 0.0f, 0.0f, 1.0f}
+    };
     float origin[3] = {0.0f, 0.0f, 0.0f};
     mgSetViewMatrix(view, origin);
 }
@@ -130,9 +142,14 @@ void ClearMain(uint8_t grey, float depth) {
 
 // Opaque full-frame quad at `depth`, writing depth: an occluder nearer than the sun.
 void DrawFrameOccluder(float depth, uint8_t grey) {
-    const float          width = static_cast<float>(mgScreenWidth);
-    const float          height = static_cast<float>(mgScreenHeight);
-    const float          corners[4][2] = {{0.0f, 0.0f}, {width, 0.0f}, {width, height}, {0.0f, height}};
+    const auto  width = static_cast<float>(mgScreenWidth);
+    const auto  height = static_cast<float>(mgScreenHeight);
+    const float corners[4][2] = {
+        {0.0f,  0.0f  },
+        {width, 0.0f  },
+        {width, height},
+        {0.0f,  height}
+    };
     std::vector<gfx::Vertex2D> quad;
 
     for (const auto &corner : corners) {
@@ -147,13 +164,7 @@ void DrawFrameOccluder(float depth, uint8_t grey) {
         quad.push_back(vertex);
     }
 
-    gfx::DrawState state = mgPortDrawState();
-    state.depth_test = gfx::DepthTest::Always;
-    state.depth_write = true;
-    state.alpha_test = false;
-    state.blend = false;
-    state.cull = gfx::CullMode::None;
-    mgPortDraw2D(gfx::Primitive::Quads, quad, gfx::TextureBinding{}, state);
+    mgPortDraw2D(gfx::Primitive::Quads, quad, gfx::TextureBinding{}, OpaqueDepthWriteState());
 }
 
 // The sun as the caller hands it over: mgTransWorldScreen's 12.4 position and mgTransZPrim(10000).
@@ -172,7 +183,12 @@ Pixels ReadMain() {
 } // namespace
 
 TEST(ScreenEffect, DepthOfFieldLevelSizesFollowRetailCascade) {
-    const DepthOfFieldLevel expected[4] = {{256, 240}, {170, 160}, {113, 106}, {75, 71}};
+    const DepthOfFieldLevel expected[4] = {
+        {.width = 256, .height = 240},
+        {.width = 170, .height = 160},
+        {.width = 113, .height = 106},
+        {.width = 75,  .height = 71 }
+    };
 
     for (int level = 0; level < 4; ++level) {
         const DepthOfFieldLevel size = DepthOfFieldLevelSize(level, 512, 480);
@@ -201,17 +217,12 @@ TEST(ScreenEffect, NativeDepthIsTheMeshProjectionReverseZ) {
 TEST(ScreenEffect, DepthOfFieldBlursOnlyFarPixels) {
     PresentRenderer renderer;
     mgSetRenderInfo(512.0f, 10.0f, 4000.0f);
-    float view[4][4] = {{1.0f, 0.0f, 0.0f, 0.0f},
-                        {0.0f, 1.0f, 0.0f, 0.0f},
-                        {0.0f, 0.0f, 1.0f, 0.0f},
-                        {0.0f, 0.0f, 0.0f, 1.0f}};
-    float origin[3] = {0.0f, 0.0f, 0.0f};
-    mgSetViewMatrix(view, origin);
+    UseIdentityView();
 
     mgBeginFrame(nullptr);
     DrawStripedScene(DepthOfFieldDepth(500.0f), DepthOfFieldDepth(2000.0f));
     mgCTexture work{};
-    float depths[1] = {1000.0f};
+    float      depths[1] = {1000.0f};
     DepthOfField(1, depths, &work, 1.0f);
     mgEndFrame(nullptr);
 
@@ -235,8 +246,8 @@ TEST(ScreenEffect, LensFlareAddsLightWhenSunVisible) {
     PresentRenderer renderer;
     mgSetRenderInfo(512.0f, 10.0f, 20000.0f);
     UseIdentityView();
-    const float          colour[4] = {128.0f, 128.0f, 128.0f, 128.0f};
-    const LensFlareSource source{true, true, 0};
+    const float           colour[4] = {128.0f, 128.0f, 128.0f, 128.0f};
+    const LensFlareSource source{.first_alpha = true, .second_alpha = true, .tex1 = 0};
 
     mgBeginFrame(nullptr);
     ClearMain(0x40, 0.0f);
@@ -251,8 +262,8 @@ TEST(ScreenEffect, LensFlareOccludedBehindGeometry) {
     PresentRenderer renderer;
     mgSetRenderInfo(512.0f, 10.0f, 20000.0f);
     UseIdentityView();
-    const float          colour[4] = {128.0f, 128.0f, 128.0f, 128.0f};
-    const LensFlareSource source{true, true, 0};
+    const float           colour[4] = {128.0f, 128.0f, 128.0f, 128.0f};
+    const LensFlareSource source{.first_alpha = true, .second_alpha = true, .tex1 = 0};
 
     mgBeginFrame(nullptr);
     ClearMain(0x40, 0.0f);
@@ -269,9 +280,9 @@ TEST(ScreenEffect, LensFlareOutsideDistanceLimitDoesNothing) {
     PresentRenderer renderer;
     mgSetRenderInfo(512.0f, 10.0f, 20000.0f);
     UseIdentityView();
-    const float          colour[4] = {128.0f, 128.0f, 128.0f, 128.0f};
-    const LensFlareSource source{true, true, 0};
-    const LensFlareSun   sun = SunAt(856, 240);
+    const float           colour[4] = {128.0f, 128.0f, 128.0f, 128.0f};
+    const LensFlareSource source{.first_alpha = true, .second_alpha = true, .tex1 = 0};
+    const LensFlareSun    sun = SunAt(856, 240);
 
     EXPECT_FALSE(LensFlareInRange(sun));
 
@@ -299,9 +310,9 @@ TEST(ScreenEffect, DepthOfFieldDisplayKeepsScreenAligned) {
         std::memcpy(constants.mvp, transform.view, sizeof constants.mvp);
         // An offscreen mesh establishes a moving scene without changing the test image.
         const gfx::Vertex3D vertices[3] = {
-            {{100, 100, 0.5f}, {}, {}, {}},
-            {{101, 100, 0.5f}, {}, {}, {}},
-            {{100, 101, 0.5f}, {}, {}, {}}
+            {.position = {100, 100, 0.5f}, .normal = {}, .uv = {}, .color = {}},
+            {.position = {101, 100, 0.5f}, .normal = {}, .uv = {}, .color = {}},
+            {.position = {100, 101, 0.5f}, .normal = {}, .uv = {}, .color = {}}
         };
         const uint32_t indices[3] = {0, 1, 2};
         gfx::SetInterpKey(931);
@@ -317,7 +328,8 @@ TEST(ScreenEffect, DepthOfFieldDisplayKeepsScreenAligned) {
     ASSERT_TRUE(gfx::RenderList(*mgPortLastList(), 0.5f,
                                 {.previous = mgPortPreviousList(), .present = true}));
     std::vector<uint8_t> display;
-    uint32_t             width = 0, height = 0;
+    uint32_t             width = 0;
+    uint32_t             height = 0;
     ASSERT_TRUE(gfx::ReadbackFrame(display, width, height));
     ASSERT_EQ(width, canonical.width);
     ASSERT_EQ(height, canonical.height);

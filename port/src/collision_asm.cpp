@@ -7,19 +7,23 @@
 #include "stubs/collision.hpp"
 #include "vu0_lanes.hpp"
 
+namespace {
+
 // Retail parks the matrix in vf10-vf13 between pre_trance_normal and the trance_normal calls after it.
-static float trance_matrix[4][4];
+float trance_matrix[4][4];
+
+} // namespace
 
 int CCollisionMDT::PickUpNearPoly(CCPoly *out, const mgVu0FBOX &box, int max) {
     sceVu0FVECTOR box_max;
     sceVu0FVECTOR box_min;
     sceVu0FVECTOR poly_max;
     sceVu0FVECTOR poly_min;
-    int           i;
-    int           count;
-    CCPoly       *polygon;
+    int           i = 0;
+    int           count = 0;
+    CCPoly       *polygon = nullptr;
 
-    if (poly == NULL) {
+    if (poly == nullptr) {
         return 0;
     }
 

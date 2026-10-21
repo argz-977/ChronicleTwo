@@ -1,5 +1,3 @@
-#include "vu1/sdw_geom.hpp"
-
 #include "common.h"
 
 #include <cmath>
@@ -12,6 +10,7 @@
 #include "mg_shadow_port.hpp"
 #include "mg_visual.hpp"
 #include "mglib_port.hpp"
+#include "vu1/sdw_geom.hpp"
 
 namespace vu = dc::vu1;
 
@@ -33,18 +32,18 @@ constexpr float kShadowDropBias = 1e-3f;
 constexpr float kGuardHalfRange = 2048.0f;
 
 vu::Mat4 ToMat(const float (*m)[4]) {
-    vu::Mat4 out;
+    vu::Mat4 out{};
     std::memcpy(&out, m, sizeof out);
     return out;
 }
 
 gfx::StencilFace VolumeFace(gfx::StencilOp depth_fail) {
-    return {gfx::CompareOp::Always, gfx::StencilOp::Keep, gfx::StencilOp::Keep, depth_fail};
+    return {.compare = gfx::CompareOp::Always, .fail = gfx::StencilOp::Keep, .pass = gfx::StencilOp::Keep, .depth_fail = depth_fail};
 }
 
 // Negated comparisons so a NaN corner is rejected.
 bool InClipVolume(const vu::Vec4 &p, const mgPortProjection &projection) {
-    if (!(p.z >= projection.near_z && p.z <= projection.far_z)) {
+    if (p.z < projection.near_z || p.z > projection.far_z) {
         return false;
     }
 
@@ -64,7 +63,7 @@ void AppendShadowPrism(const vu::Vec4 top[3], const vu::Vec4 drop[3], const vu::
     }
 
     const float bias = kShadowDropBias * std::fabs(drop[0].z);
-    vu::Vec4 biased[3];
+    vu::Vec4    biased[3];
     for (int j = 0; j < 3; ++j) {
         biased[j] = drop[j] + bias_dir * bias;
     }
@@ -73,20 +72,20 @@ void AppendShadowPrism(const vu::Vec4 top[3], const vu::Vec4 drop[3], const vu::
     vu::SdwPrism(top, biased, out);
 }
 
-PORT_OVERRIDE int mgCShadowMDT::CreateFacePacket(u_int *packet, mgCFace *face) {
+PORT_OVERRIDE int mgCShadowMDT::CreateFacePacket(u_int * /*packet*/, mgCFace * /*face*/) {
     return 0;
 }
 
-PORT_OVERRIDE uptr mgCShadowMDT::CreatePacket(mgCDrawManager *draw_manager) {
-    for (mgFACE_GROUP *node = face_group; node != NULL; node = node->next) {
-        node->packet = NULL;
+PORT_OVERRIDE uptr mgCShadowMDT::CreatePacket(mgCDrawManager * /*draw_manager*/) {
+    for (mgFACE_GROUP *node = face_group; node != nullptr; node = node->next) {
+        node->packet = nullptr;
         node->packet_size = 0;
     }
 
     return 0;
 }
 
-PORT_OVERRIDE int mgCShadowMDT::CreateRenderInfoPacket(u_int *packet, float (*matrix)[4], mgRENDER_INFO *info) {
+PORT_OVERRIDE int mgCShadowMDT::CreateRenderInfoPacket(u_int * /*packet*/, float (*matrix)[4], mgRENDER_INFO *info) {
     if (!mgPortRendererReady() || !mgPortFrameOpen() || !mgPortInShadow()) {
         return 0;
     }
@@ -98,22 +97,21 @@ PORT_OVERRIDE int mgCShadowMDT::CreateRenderInfoPacket(u_int *packet, float (*ma
     mgMulMatrix(shadow, info->shadow, matrix);
     mgMulMatrix(drop_to_eye, info->view, shadow);
 
-    const vu::Mat4 to_eye = ToMat(model_to_eye);
-    const vu::Mat4 drop_eye = ToMat(drop_to_eye);
-    const vu::Vec4 light_world = {info->shadow_light_dir[0], info->shadow_light_dir[1],
-                                  info->shadow_light_dir[2], 0.0f};
-    const vu::Vec4 light_eye = vu::Mul(ToMat(info->view), light_world);
-    const vu::Vec4 bias_dir = light_eye * (1.0f / std::sqrt(vu::Dot3(light_eye, light_eye)));
-    const mgPortProjection projection = mgPortCurrentProjection();
+    const vu::Mat4                    to_eye = ToMat(model_to_eye);
+    const vu::Mat4                    drop_eye = ToMat(drop_to_eye);
+    const vu::Vec4                    light_world = {.x = info->shadow_light_dir[0], .y = info->shadow_light_dir[1], .z = info->shadow_light_dir[2], .w = 0.0f};
+    const vu::Vec4                    light_eye = vu::Mul(ToMat(info->view), light_world);
+    const vu::Vec4                    bias_dir = light_eye * (1.0f / std::sqrt(vu::Dot3(light_eye, light_eye)));
+    const mgPortProjection            projection = mgPortCurrentProjection();
     std::vector<vu::SdwPrismTriangle> prisms;
 
-    for (mgFACE_GROUP *group = face_group; group != NULL; group = group->next) {
-        for (mgCFace *face = group->face; face != NULL; face = face->next) {
+    for (mgFACE_GROUP *group = face_group; group != nullptr; group = group->next) {
+        for (mgCFace *face = group->face; face != nullptr; face = face->next) {
             for (int t = 0; t < face->vertex_num; ++t) {
                 vu::Vec4 corner[3];
                 for (int j = 0; j < 3; ++j) {
                     const float *p = vertex[face->index[3 * t + j]];
-                    corner[j] = {p[0], p[1], p[2], 1.0f};
+                    corner[j] = {.x = p[0], .y = p[1], .z = p[2], .w = 1.0f};
                 }
 
                 vu::Vec4 top[3];
@@ -132,7 +130,7 @@ PORT_OVERRIDE int mgCShadowMDT::CreateRenderInfoPacket(u_int *packet, float (*ma
     }
 
     std::vector<gfx::Vertex3D> vertices;
-    std::vector<uint32_t> indices;
+    std::vector<uint32_t>      indices;
     vertices.reserve(prisms.size() * 3);
     indices.reserve(prisms.size() * 3);
     for (const vu::SdwPrismTriangle &tri : prisms) {
@@ -161,7 +159,7 @@ PORT_OVERRIDE int mgCShadowMDT::CreateRenderInfoPacket(u_int *packet, float (*ma
     constants.diffuse[2] = kShadowDiffuse;
     constants.diffuse[3] = kShadowAlpha;
 
-    const mgCDrawEnv &env = draw_env != NULL ? *draw_env : info->draw_env[0];
+    const mgCDrawEnv &env = draw_env != nullptr ? *draw_env : info->draw_env[0];
 
     // Z-fail: a pixel's count is the number of volumes its surface lies inside. Colour is not written.
     gfx::DrawState volume = mgPortDrawState();

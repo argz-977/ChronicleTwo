@@ -9,8 +9,8 @@ namespace {
 struct ProgramTable {
     RS_PROG_HEADER header{};
     RS_PROGDATA    entries[2]{
-        {7,   0},
-        {150, 0}
+        {.no = 7,   .func = 0},
+        {.no = 150, .func = 0}
     };
 
     ProgramTable() {

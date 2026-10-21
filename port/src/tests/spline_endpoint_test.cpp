@@ -60,7 +60,8 @@ TEST(SplineEndpoint, CameraPathSetupProducesFiniteSpeedsAndFinishes) {
     ASSERT_GT(path.pos_spline.speed, 0.0f);
     ASSERT_GT(path.ref_spline.speed, 0.0f);
     path.Run();
-    float eye[4] = {}, look[4] = {};
+    float eye[4] = {};
+    float look[4] = {};
     for (int tick = 0; tick < 120 && !path.CheckEnd(); ++tick) {
         path.Step(eye, look);
         for (int axis = 0; axis < 3; ++axis) {
@@ -77,8 +78,10 @@ TEST(SplineEndpoint, CameraPathSetupProducesFiniteSpeedsAndFinishes) {
 
 TEST(SplineEndpoint, CameraPathSpeedIncludesTheFinalInterval) {
     CCameraPas path;
-    float      eye0[4] = {0, 0, 0, 1}, eye1[4] = {10, 0, 0, 1};
-    float      look0[4] = {0, 5, 0, 1}, look1[4] = {10, 5, 0, 1};
+    float      eye0[4] = {0, 0, 0, 1};
+    float      eye1[4] = {10, 0, 0, 1};
+    float      look0[4] = {0, 5, 0, 1};
+    float      look1[4] = {10, 5, 0, 1};
     path.AddCameraPas(eye0, look0);
     path.AddCameraPas(eye1, look1);
     path.SetFrame(10);

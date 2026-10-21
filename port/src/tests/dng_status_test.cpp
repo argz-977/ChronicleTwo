@@ -42,7 +42,7 @@ public:
         TEX_SystenFrame = &texture;
         texture.tex0.TBP0 = 1234;
         mgPortSetTextureLookup(nullptr, [](uint64_t tex0) {
-            return mgPortTexture{(tex0 & 0x3FFF) == 1234 ? 42u : gfx::kNullTexture, gfx::kNullTexture};
+            return mgPortTexture{.texture = (tex0 & 0x3FFF) == 1234 ? 42u : gfx::kNullTexture, .palette = gfx::kNullTexture};
         });
         auto *battle = GetBattleCharaInfo();
         battle->Initialize();
@@ -60,9 +60,9 @@ public:
         mgPortSetPrimSink([this](gfx::Primitive, std::span<const gfx::Vertex2D> vertices,
                                  const gfx::TextureBinding &binding, const gfx::DrawState &) {
             batches.push_back({
-                {vertices.begin(), vertices.end()},
-                gfx::CurrentUiAnchor(),
-                binding.texture
+                .vertices = {vertices.begin(), vertices.end()},
+                .anchor = gfx::CurrentUiAnchor(),
+                .texture = binding.texture
             });
         });
     }
@@ -109,7 +109,8 @@ private:
 };
 
 int AnchorX(const HudBatch &batch) {
-    float lo = INFINITY, hi = -INFINITY;
+    float lo = INFINITY;
+    float hi = -INFINITY;
     for (const auto &vertex : batch.vertices) {
         lo = std::min(lo, vertex.x);
         hi = std::max(hi, vertex.x);
@@ -123,9 +124,11 @@ int AnchorX(const HudBatch &batch) {
 TEST(DngStatus, HumanPanelsKeepTheirOwnScreenSide) {
     HumanHudRig rig;
     DrawStatusBord();
-    int left = 0, right = 0;
+    int left = 0;
+    int right = 0;
     for (const auto &batch : rig.batches) {
-        float lo = INFINITY, hi = -INFINITY;
+        float lo = INFINITY;
+        float hi = -INFINITY;
         for (const auto &vertex : batch.vertices) {
             lo = std::min(lo, vertex.x);
             hi = std::max(hi, vertex.x);

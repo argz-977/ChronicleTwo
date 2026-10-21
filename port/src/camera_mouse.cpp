@@ -15,18 +15,18 @@ namespace {
 struct Vec {
     double x, y, z;
 
-    Vec operator+(Vec b) const { return {x + b.x, y + b.y, z + b.z}; }
+    Vec operator+(Vec b) const { return {.x = x + b.x, .y = y + b.y, .z = z + b.z}; }
 
-    Vec operator-(Vec b) const { return {x - b.x, y - b.y, z - b.z}; }
+    Vec operator-(Vec b) const { return {.x = x - b.x, .y = y - b.y, .z = z - b.z}; }
 
-    Vec operator*(double s) const { return {x * s, y * s, z * s}; }
+    Vec operator*(double s) const { return {.x = x * s, .y = y * s, .z = z * s}; }
 };
 
-Vec Read(const float *p) { return {p[0], p[1], p[2]}; }
+Vec Read(const float *p) { return {.x = p[0], .y = p[1], .z = p[2]}; }
 
 double Dot(Vec a, Vec b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 
-Vec Cross(Vec a, Vec b) { return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x}; }
+Vec Cross(Vec a, Vec b) { return {.x = a.y * b.z - a.z * b.y, .y = a.z * b.x - a.x * b.z, .z = a.x * b.y - a.y * b.x}; }
 
 double Length(Vec a) { return std::sqrt(Dot(a, a)); }
 
@@ -34,14 +34,20 @@ bool Finite(Vec a) { return std::isfinite(a.x) && std::isfinite(a.y) && std::isf
 
 Vec Orbit(Vec eye, Vec target, float angle) {
     const Vec   d = eye - target;
-    const float c = std::cos(angle), s = std::sin(angle);
-    return target + Vec{d.x * c + d.z * s, d.y, d.z * c - d.x * s};
+    const float c = std::cos(angle);
+    const float s = std::sin(angle);
+    return target + Vec{.x = d.x * c + d.z * s, .y = d.y, .z = d.z * c - d.x * s};
 }
 
 double SegmentDistance(Vec a, Vec b, Vec c, Vec d) {
-    const Vec    u = b - a, v = d - c, w = a - c;
-    const double uu = Dot(u, u), vv = Dot(v, v), uv = Dot(u, v);
-    double       s = 0, t = 0;
+    const Vec    u = b - a;
+    const Vec    v = d - c;
+    const Vec    w = a - c;
+    const double uu = Dot(u, u);
+    const double vv = Dot(v, v);
+    const double uv = Dot(u, v);
+    double       s = 0;
+    double       t = 0;
     if (uu > 0 && vv > 0) {
         const double det = uu * vv - uv * uv;
         if (det > 0) {
@@ -81,15 +87,17 @@ double PointTriangleDistance(Vec p, Vec a, Vec b, Vec c, Vec normal) {
 }
 
 double TriangleDistance(Vec start, Vec end, const CCPoly &poly) {
-    const Vec a = Read(poly.vertex[0]), b = Read(poly.vertex[1]), c = Read(poly.vertex[2]);
+    const Vec a = Read(poly.vertex[0]);
+    const Vec b = Read(poly.vertex[1]);
+    const Vec c = Read(poly.vertex[2]);
     const Vec normal = Cross(b - a, c - a);
-    // Invalid geometry cannot prove a clear corridor.
-    // Distance calculations use double precision so near-parallel edges do not
-    // lose the small separation that the clearance proof depends on.
+    // Invalid geometry cannot prove a clear corridor. Double precision keeps the small separation of
+    // near-parallel edges that the clearance proof depends on.
     if (!Finite(a) || !Finite(b) || !Finite(c) || !(Dot(normal, normal) > 0) || !Finite(normal)) {
         return 0;
     }
-    const double plane = Dot(start - a, normal), direction = Dot(end - start, normal);
+    const double plane = Dot(start - a, normal);
+    const double direction = Dot(end - start, normal);
     if (direction != 0) {
         const double along = -plane / direction;
         if (along >= 0 && along <= 1 && Inside(start + (end - start) * along, a, b, c, normal)) {
@@ -100,21 +108,8 @@ double TriangleDistance(Vec start, Vec end, const CCPoly &poly) {
                      SegmentDistance(start, end, a, b), SegmentDistance(start, end, b, c), SegmentDistance(start, end, c, a)});
 }
 
-// A capsule around the middle look ray encloses the whole arc interval and all
-// interpolated current/pending eyes and targets. Subdivision reduces this bound,
-// instead of sampling rays that can miss a thin wall between endpoints.
-bool ClearArc(const CCameraControl &camera, float begin, float end, CCPoly *polys, int count) {
-    const float middle = -(begin + end) * 0.5f;
-    const Vec   ref = Read(camera.ref), next_ref = Read(camera.next_ref);
-    const Vec   eye = Orbit(Read(camera.pos), ref, middle);
-    const Vec   next_eye = Orbit(Read(camera.next_pos), next_ref, middle);
-    const float radius = std::max(Length(Read(camera.pos) - ref), Length(Read(camera.next_pos) - next_ref));
-    const float arc = 2 * radius * std::sin(std::fabs(end - begin) * 0.25f);
-    const float envelope = 4.0f + std::max(Length(next_eye - eye) * 0.5f + arc, Length(next_ref - ref) * 0.5f);
-    if (!std::isfinite(envelope)) {
-        return false;
-    }
-    const Vec from = (ref + next_ref) * 0.5f, to = (eye + next_eye) * 0.5f;
+// Whether every polygon lies farther than envelope from the segment from-to.
+bool ClearCapsule(Vec from, Vec to, double envelope, CCPoly *polys, int count) {
     for (int i = 0; i < count; ++i) {
         if (!(TriangleDistance(from, to, polys[i]) > envelope)) {
             return false;
@@ -123,22 +118,36 @@ bool ClearArc(const CCameraControl &camera, float begin, float end, CCPoly *poly
     return true;
 }
 
+// A capsule around the middle look ray encloses the whole arc interval and all
+// interpolated current/pending eyes and targets. Subdivision reduces this bound,
+// instead of sampling rays that can miss a thin wall between endpoints.
+bool ClearArc(const CCameraControl &camera, float begin, float end, CCPoly *polys, int count) {
+    const float middle = -(begin + end) * 0.5f;
+    const Vec   ref = Read(camera.ref);
+    const Vec   next_ref = Read(camera.next_ref);
+    const Vec   eye = Orbit(Read(camera.pos), ref, middle);
+    const Vec   next_eye = Orbit(Read(camera.next_pos), next_ref, middle);
+    const float radius = std::max(Length(Read(camera.pos) - ref), Length(Read(camera.next_pos) - next_ref));
+    const float arc = 2 * radius * std::sin(std::fabs(end - begin) * 0.25f);
+    const float envelope = 4.0f + std::max(Length(next_eye - eye) * 0.5f + arc, Length(next_ref - ref) * 0.5f);
+    if (!std::isfinite(envelope)) {
+        return false;
+    }
+    return ClearCapsule((ref + next_ref) * 0.5f, (eye + next_eye) * 0.5f, envelope, polys, count);
+}
+
 bool ClearRise(const CCameraControl &camera, float begin, float end, CCPoly *polys, int count) {
-    const Vec   ref = Read(camera.ref), next_ref = Read(camera.next_ref);
-    const Vec   rise{0, (begin + end) * 0.5f, 0};
-    const Vec   eye = Read(camera.pos) + rise, next_eye = Read(camera.next_pos) + rise;
+    const Vec   ref = Read(camera.ref);
+    const Vec   next_ref = Read(camera.next_ref);
+    const Vec   rise{.x = 0, .y = (begin + end) * 0.5f, .z = 0};
+    const Vec   eye = Read(camera.pos) + rise;
+    const Vec   next_eye = Read(camera.next_pos) + rise;
     const float envelope = 4.0f + std::max(Length(next_eye - eye) * 0.5f + std::fabs(end - begin) * 0.5f,
                                            Length(next_ref - ref) * 0.5f);
     if (!std::isfinite(envelope)) {
         return false;
     }
-    const Vec from = (ref + next_ref) * 0.5f, to = (eye + next_eye) * 0.5f;
-    for (int i = 0; i < count; ++i) {
-        if (!(TriangleDistance(from, to, polys[i]) > envelope)) {
-            return false;
-        }
-    }
-    return true;
+    return ClearCapsule((ref + next_ref) * 0.5f, (eye + next_eye) * 0.5f, envelope, polys, count);
 }
 
 void Write(float *out, Vec p) {
@@ -176,79 +185,15 @@ void CopyPose(CCameraControl &camera, const CCameraControl &candidate) {
     camera.distance = Length(pending);
 }
 
-bool ClearFollow(Vec eye, Vec target, Vec next_eye, Vec next_target, CCPoly *polys, int count) {
-    if (!Finite(eye) || !Finite(target) || !Finite(next_eye) || !Finite(next_target)) {
-        return false;
-    }
-    const Vec    middle_target = (target + next_target) * 0.5;
-    const double target_radius = Length(next_target - target) * 0.5;
-    const double eye_travel = Length(next_eye - eye);
-    double       accepted = 0, step = 1;
-    // The target can ease at a different rate from the eye. Enclose its entire
-    // segment for every eye interval rather than checking synchronized samples.
-    for (int work = 0; work < 256; ++work) {
-        const double end = std::min(1.0, accepted + step);
-        const Vec    middle_eye = eye + (next_eye - eye) * ((accepted + end) * 0.5);
-        const double envelope = 4.0 + std::max(target_radius, eye_travel * (end - accepted) * 0.5);
-        bool         clear = true;
-        for (int i = 0; i < count; ++i) {
-            if (!(TriangleDistance(middle_target, middle_eye, polys[i]) > envelope)) {
-                clear = false;
-                break;
-            }
-        }
-        if (clear) {
-            if (end == 1) {
-                return true;
-            }
-            accepted = end;
-            step = 1 - accepted;
-        } else {
-            step *= 0.5;
-            if (step < 0.00001) {
-                return false;
-            }
-        }
-    }
-    return false;
+// The active, unlocked main camera outside scene events; each view adds its mode.
+bool MainCameraActive(CCameraControl *camera, CScene *scene, CPadControl *pad, bool subgame, bool locked) {
+    return camera && scene && pad && !subgame && !locked && !scene->event_run && scene->active_camera == 0 &&
+           scene->GetCamera(0) == camera && !camera->suspended && !mgCCamera::StopCamera &&
+           !(camera->rot_cancel & CAMERA_ROT_CANCEL_ANALOG);
 }
 } // namespace
 
-float MouseCameraClampFollow(CCameraControl &camera, const CCameraControl &candidate, CCPoly *polys, int count) {
-    const Vec eye = Read(camera.pos), target = Read(camera.ref);
-    const Vec next_eye = Read(candidate.next_pos), next_target = Read(candidate.next_ref);
-    Write(camera.next_pos, eye);
-    Write(camera.next_ref, target);
-    if (count < 0 || count >= 512 || (count && !polys) ||
-        !Finite(next_eye) || !Finite(next_target) || !ClearFollow(eye, target, eye, target, polys, count)) {
-        return -1;
-    }
-    double accepted = 0, rejected = 1;
-    if (ClearFollow(eye, target, next_eye, next_target, polys, count)) {
-        accepted = 1;
-    } else {
-        // Find a safe destination from the actual pose, even when the old
-        // pending pose was blocked. Refused pending motion is never replayed.
-        for (int work = 0; work < 16; ++work) {
-            const double fraction = (accepted + rejected) * 0.5;
-            if (ClearFollow(eye, target, eye + (next_eye - eye) * fraction,
-                            target + (next_target - target) * fraction, polys, count)) {
-                accepted = fraction;
-            } else {
-                rejected = fraction;
-            }
-        }
-        const double travel = std::max(Length(next_eye - eye), Length(next_target - target));
-        if (travel > 0) {
-            accepted = std::max(0.0, accepted - 0.1 / travel);
-        }
-    }
-    Write(camera.next_pos, eye + (next_eye - eye) * accepted);
-    Write(camera.next_ref, target + (next_target - target) * accepted);
-    return accepted;
-}
-
-int MouseCameraCollectPolys(CScene &scene, mgVu0FBOX &box, CCPoly *out, int capacity) {
+int MouseCameraCollectPolys(CScene &scene, mgVu0FBOX &box, CCPoly *out, int capacity, bool walking) {
     if (!out || capacity <= 0) {
         return -1;
     }
@@ -267,7 +212,8 @@ int MouseCameraCollectPolys(CScene &scene, mgVu0FBOX &box, CCPoly *out, int capa
         if (remaining <= 0) {
             return -1;
         }
-        const int found = maps[i]->GetCameraPoly(out + total, box, remaining);
+        const int found = walking ? maps[i]->GetColPoly(out + total, box, remaining)
+                                  : maps[i]->GetCameraPoly(out + total, box, remaining);
         if (found < 0 || found >= remaining) {
             return -1;
         }
@@ -276,23 +222,33 @@ int MouseCameraCollectPolys(CScene &scene, mgVu0FBOX &box, CCPoly *out, int capa
     return total;
 }
 
+float MouseCameraClearance(const float *point, CCPoly *polys, int count) {
+    const Vec p = Read(point);
+    if (count < 0 || (count && !polys) || !Finite(p)) {
+        return 0;
+    }
+    double nearest = INFINITY;
+    for (int i = 0; i < count; ++i) {
+        nearest = std::min(nearest, TriangleDistance(p, p, polys[i]));
+    }
+    return static_cast<float>(nearest);
+}
+
 bool TownMouseCameraOwns(CCameraControl *camera, CScene *scene, CPadControl *pad,
                          bool walking, bool subgame, bool locked) {
-    return camera && scene && pad && walking && !subgame && !locked &&
-           !scene->event_run && scene->active_camera == 0 && scene->GetCamera(scene->active_camera) == camera &&
-           camera->control_on && camera->follow_on && !camera->suspended &&
-           !mgCCamera::StopCamera && !(camera->rot_cancel & CAMERA_ROT_CANCEL_ANALOG);
+    // Door, map and world-map entry events turn follow off until a later event resets the camera. Retail's
+    // control, like the right stick, runs without follow, so control alone decides.
+    return walking && MainCameraActive(camera, scene, pad, subgame, locked) && camera->control_on;
 }
 
 bool DungeonMouseCameraOwns(CCameraControl *camera, CScene *scene, CPadControl *pad,
                             const DNG_STATUS &status, const DNG_BATTLE_AREA *area,
                             CActionChara *chara, bool subgame, bool locked, bool debug, bool eye) {
-    const bool active = eye ? camera && scene && pad && !subgame && !locked &&
-                                  !scene->event_run && scene->active_camera == 0 && scene->GetCamera(0) == camera &&
-                                  !camera->follow_on && !camera->suspended && !mgCCamera::StopCamera &&
-                                  !(camera->rot_cancel & CAMERA_ROT_CANCEL_ANALOG)
-                            : TownMouseCameraOwns(camera, scene, pad, true, subgame, locked);
-    return active && status.mode == DNG_STATUS_FIELD && bool(status.eye_view) == eye && area && chara && !debug &&
+    // Events turn follow off and the death event never turns it back on; retail control runs without it, so
+    // follow only tells the eye view apart.
+    const bool active = MainCameraActive(camera, scene, pad, subgame, locked) &&
+                        (eye ? !camera->follow_on : static_cast<bool>(camera->control_on));
+    return active && status.mode == DNG_STATUS_FIELD && static_cast<bool>(status.eye_view) == eye && area && chara && !debug &&
            (area->camera_mode == DNG_CAMERA_FOLLOW || area->camera_mode == DNG_CAMERA_FOLLOW_LOW) &&
            !(area->pause_flag & (DNG_PAUSE_PLAYER_STEP | DNG_PAUSE_PLAYER_CONTROL |
                                  DNG_PAUSE_FIELD_STEP | DNG_PAUSE_PAD_RESET)) &&
@@ -318,8 +274,7 @@ bool MouseCameraEye(CCameraControl &camera, float &heading, float &tilt, float y
     if (pitch < 0) {
         tilt = std::min(tilt - pitch, std::max(tilt, 0.65f));
     }
-    const Vec ray{10 * std::sin(heading) * std::cos(tilt), -10 * std::sin(tilt),
-                  10 * std::cos(heading) * std::cos(tilt)};
+    const Vec ray{.x = 10 * std::sin(heading) * std::cos(tilt), .y = -10 * std::sin(tilt), .z = 10 * std::cos(heading) * std::cos(tilt)};
     Write(camera.ref, Read(camera.pos) + ray);
     Write(camera.next_ref, Read(camera.next_pos) + ray);
     return true;
@@ -405,7 +360,8 @@ float MouseCameraPitch(CCameraControl &camera, float pitch, CCPoly *polys, int c
     if (!std::isfinite(delta) || delta == 0 || !ClearRise(camera, 0, 0, polys, count)) {
         return 0;
     }
-    float accepted = 0, step = delta;
+    float accepted = 0;
+    float step = delta;
     for (int work = 0; work < 256 && std::fabs(delta - accepted) > 0.001f; ++work) {
         const float target = accepted + step;
         if (ClearRise(camera, accepted, target, polys, count)) {

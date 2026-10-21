@@ -21,21 +21,21 @@ ThreadParam Param(void (*entry)(void *), int priority) {
     return param;
 }
 
-void LoopA(void *) {
+void LoopA(void * /*unused*/) {
     for (;;) {
         g_log += 'A';
         RotateThreadReadyQueue(kPriority);
     }
 }
 
-void LoopB(void *) {
+void LoopB(void * /*unused*/) {
     for (;;) {
         g_log += 'B';
         RotateThreadReadyQueue(kPriority);
     }
 }
 
-void HighPriorityOnce(void *) {
+void HighPriorityOnce(void * /*unused*/) {
     g_log += 'H';
 }
 
@@ -45,11 +45,11 @@ void OnceAfterWait(void *sema) {
     g_log += 'W';
 }
 
-void AppendTOnce(void *) {
+void AppendTOnce(void * /*unused*/) {
     g_log += 'T';
 }
 
-void RotateForever(void *) {
+void RotateForever(void * /*unused*/) {
     for (;;) {
         RotateThreadReadyQueue(kPriority);
     }
@@ -60,7 +60,7 @@ void RotateInPumpHook() {
     RotateThreadReadyQueue(kPriority);
 }
 
-int RotateOnTickCallback(int) {
+int RotateOnTickCallback(int /*unused*/) {
     RotateThreadReadyQueue(kPriority);
     return 0;
 }

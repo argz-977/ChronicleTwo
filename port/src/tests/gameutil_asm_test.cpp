@@ -77,10 +77,10 @@ TEST(GameUtilAsm, TestVUnewTakesTranslationRowAsRowVectorTimesMatrix) {
 
 TEST(GameUtilAsm, TestVUnewAddsRowTwoLastColumnToAccumulatorW) {
     float matrix[4][4] = {
-        {1.0f, 0.0f, 0.0f, 0.0f},
-        {0.0f, 1.0f, 0.0f, 0.0f},
+        {1.0f, 0.0f, 0.0f, 0.0f },
+        {0.0f, 1.0f, 0.0f, 0.0f },
         {0.0f, 0.0f, 1.0f, 0.25f},
-        {0.0f, 0.0f, 0.0f, 1.0f},
+        {0.0f, 0.0f, 0.0f, 1.0f },
     };
     float vertex[4] = {2.0f, 2.0f, 2.0f, 1.0f};
     float weight[4] = {0.0f, 0.0f, 0.0f, 0.0f};
@@ -96,21 +96,21 @@ TEST(GameUtilAsm, TestVUnewAddsRowTwoLastColumnToAccumulatorW) {
 }
 
 TEST(GameUtilAsm, CheckHitReturnsMinusOneWhenNoPolygonIsCrossed) {
-    CCPoly polys[1] = {Floor(0.0f)};
+    CCPoly        polys[1] = {Floor(0.0f)};
     CollisionInfo info = MakeInfo(polys, 1);
-    float from[4] = {50.0f, 10.0f, 50.0f, 1.0f};
-    float to[4] = {50.0f, -10.0f, 50.0f, 1.0f};
-    float hit[4] = {};
+    float         from[4] = {50.0f, 10.0f, 50.0f, 1.0f};
+    float         to[4] = {50.0f, -10.0f, 50.0f, 1.0f};
+    float         hit[4] = {};
 
     EXPECT_EQ(CheckHit(&info, from, to, hit, 1, 0), -1);
 }
 
 TEST(GameUtilAsm, CheckHitReturnsFloorIntersectionForCrossingSegment) {
-    CCPoly polys[1] = {Floor(0.0f)};
+    CCPoly        polys[1] = {Floor(0.0f)};
     CollisionInfo info = MakeInfo(polys, 1);
-    float from[4] = {0.0f, 10.0f, 0.0f, 1.0f};
-    float to[4] = {0.0f, -10.0f, 0.0f, 1.0f};
-    float hit[4] = {};
+    float         from[4] = {0.0f, 10.0f, 0.0f, 1.0f};
+    float         to[4] = {0.0f, -10.0f, 0.0f, 1.0f};
+    float         hit[4] = {};
 
     EXPECT_EQ(CheckHit(&info, from, to, hit, 1, 0), 0);
     EXPECT_FLOAT_EQ(hit[0], 0.0f);
@@ -119,22 +119,22 @@ TEST(GameUtilAsm, CheckHitReturnsFloorIntersectionForCrossingSegment) {
 }
 
 TEST(GameUtilAsm, CheckHitClosestPicksNearestPolygonToOrigin) {
-    CCPoly polys[2] = {Floor(0.0f), Floor(5.0f)};
+    CCPoly        polys[2] = {Floor(0.0f), Floor(5.0f)};
     CollisionInfo info = MakeInfo(polys, 2);
-    float from[4] = {0.0f, 10.0f, 0.0f, 1.0f};
-    float to[4] = {0.0f, -10.0f, 0.0f, 1.0f};
-    float hit[4] = {};
+    float         from[4] = {0.0f, 10.0f, 0.0f, 1.0f};
+    float         to[4] = {0.0f, -10.0f, 0.0f, 1.0f};
+    float         hit[4] = {};
 
     EXPECT_EQ(CheckHit(&info, from, to, hit, 1, 0), 1);
     EXPECT_FLOAT_EQ(hit[1], 5.0f);
 }
 
 TEST(GameUtilAsm, CheckHitNotClosestTakesFirstCrossedPolygon) {
-    CCPoly polys[2] = {Floor(0.0f), Floor(5.0f)};
+    CCPoly        polys[2] = {Floor(0.0f), Floor(5.0f)};
     CollisionInfo info = MakeInfo(polys, 2);
-    float from[4] = {0.0f, 10.0f, 0.0f, 1.0f};
-    float to[4] = {0.0f, -10.0f, 0.0f, 1.0f};
-    float hit[4] = {};
+    float         from[4] = {0.0f, 10.0f, 0.0f, 1.0f};
+    float         to[4] = {0.0f, -10.0f, 0.0f, 1.0f};
+    float         hit[4] = {};
 
     EXPECT_EQ(CheckHit(&info, from, to, hit, 0, 0), 0);
     EXPECT_FLOAT_EQ(hit[1], 0.0f);
@@ -144,19 +144,19 @@ TEST(GameUtilAsm, CheckHitSkipsPolygonWhoseIgnoreMaskMatches) {
     CCPoly polys[2] = {Floor(0.0f), Floor(5.0f)};
     polys[0].ignore_mask = 1;
     CollisionInfo info = MakeInfo(polys, 2);
-    float from[4] = {0.0f, 10.0f, 0.0f, 1.0f};
-    float to[4] = {0.0f, -10.0f, 0.0f, 1.0f};
-    float hit[4] = {};
+    float         from[4] = {0.0f, 10.0f, 0.0f, 1.0f};
+    float         to[4] = {0.0f, -10.0f, 0.0f, 1.0f};
+    float         hit[4] = {};
 
     EXPECT_EQ(CheckHit(&info, from, to, hit, 1, 1), 1);
 }
 
 TEST(GameUtilAsm, CheckHitMissesSegmentThatStaysAbovePlane) {
-    CCPoly polys[1] = {Floor(0.0f)};
+    CCPoly        polys[1] = {Floor(0.0f)};
     CollisionInfo info = MakeInfo(polys, 1);
-    float from[4] = {0.0f, 10.0f, 0.0f, 1.0f};
-    float to[4] = {0.0f, 5.0f, 0.0f, 1.0f};
-    float hit[4] = {};
+    float         from[4] = {0.0f, 10.0f, 0.0f, 1.0f};
+    float         to[4] = {0.0f, 5.0f, 0.0f, 1.0f};
+    float         hit[4] = {};
 
     EXPECT_EQ(CheckHit(&info, from, to, hit, 1, 0), -1);
 }
@@ -166,25 +166,25 @@ TEST(GameUtilAsm, CheckHitNullCollisionReturnsZero) {
     float to[4] = {0.0f, -10.0f, 0.0f, 1.0f};
     float hit[4] = {};
 
-    EXPECT_EQ(CheckHit(NULL, from, to, hit, 1, 0), 0);
+    EXPECT_EQ(CheckHit(nullptr, from, to, hit, 1, 0), 0);
 }
 
 TEST(GameUtilAsm, CheckHitEmptyCollisionReturnsMinusOne) {
-    CollisionInfo info = MakeInfo(NULL, 0);
-    float from[4] = {0.0f, 10.0f, 0.0f, 1.0f};
-    float to[4] = {0.0f, -10.0f, 0.0f, 1.0f};
-    float hit[4] = {};
+    CollisionInfo info = MakeInfo(nullptr, 0);
+    float         from[4] = {0.0f, 10.0f, 0.0f, 1.0f};
+    float         to[4] = {0.0f, -10.0f, 0.0f, 1.0f};
+    float         hit[4] = {};
 
     EXPECT_EQ(CheckHit(&info, from, to, hit, 1, 0), -1);
 }
 
 TEST(GameUtilAsm, CheckHitsReturnsEveryCrossedPolygonInArrayOrder) {
-    CCPoly polys[3] = {Floor(0.0f), Floor(5.0f), Floor(20.0f)};
+    CCPoly        polys[3] = {Floor(0.0f), Floor(5.0f), Floor(20.0f)};
     CollisionInfo info = MakeInfo(polys, 3);
-    float from[4] = {0.0f, 10.0f, 0.0f, 1.0f};
-    float to[4] = {0.0f, -10.0f, 0.0f, 1.0f};
-    int   hit_polys[8] = {};
-    float hit_points[8][4] = {};
+    float         from[4] = {0.0f, 10.0f, 0.0f, 1.0f};
+    float         to[4] = {0.0f, -10.0f, 0.0f, 1.0f};
+    int           hit_polys[8] = {};
+    float         hit_points[8][4] = {};
 
     EXPECT_EQ(CheckHits(&info, from, to, 8, hit_polys, hit_points, 0, 0), 2);
     EXPECT_EQ(hit_polys[0], 0);
@@ -194,12 +194,12 @@ TEST(GameUtilAsm, CheckHitsReturnsEveryCrossedPolygonInArrayOrder) {
 }
 
 TEST(GameUtilAsm, CheckHitsPositiveSortOrdersByDistanceFromOrigin) {
-    CCPoly polys[3] = {Floor(0.0f), Floor(5.0f), Floor(20.0f)};
+    CCPoly        polys[3] = {Floor(0.0f), Floor(5.0f), Floor(20.0f)};
     CollisionInfo info = MakeInfo(polys, 3);
-    float from[4] = {0.0f, 10.0f, 0.0f, 1.0f};
-    float to[4] = {0.0f, -10.0f, 0.0f, 1.0f};
-    int   hit_polys[8] = {};
-    float hit_points[8][4] = {};
+    float         from[4] = {0.0f, 10.0f, 0.0f, 1.0f};
+    float         to[4] = {0.0f, -10.0f, 0.0f, 1.0f};
+    int           hit_polys[8] = {};
+    float         hit_points[8][4] = {};
 
     EXPECT_EQ(CheckHits(&info, from, to, 8, hit_polys, hit_points, 1, 0), 2);
     EXPECT_EQ(hit_polys[0], 1);
@@ -209,12 +209,12 @@ TEST(GameUtilAsm, CheckHitsPositiveSortOrdersByDistanceFromOrigin) {
 }
 
 TEST(GameUtilAsm, CheckHitsNegativeSortAlsoSortsAscending) {
-    CCPoly polys[3] = {Floor(0.0f), Floor(5.0f), Floor(20.0f)};
+    CCPoly        polys[3] = {Floor(0.0f), Floor(5.0f), Floor(20.0f)};
     CollisionInfo info = MakeInfo(polys, 3);
-    float from[4] = {0.0f, 10.0f, 0.0f, 1.0f};
-    float to[4] = {0.0f, -10.0f, 0.0f, 1.0f};
-    int   hit_polys[8] = {};
-    float hit_points[8][4] = {};
+    float         from[4] = {0.0f, 10.0f, 0.0f, 1.0f};
+    float         to[4] = {0.0f, -10.0f, 0.0f, 1.0f};
+    int           hit_polys[8] = {};
+    float         hit_points[8][4] = {};
 
     EXPECT_EQ(CheckHits(&info, from, to, 8, hit_polys, hit_points, -1, 0), 2);
     EXPECT_EQ(hit_polys[0], 1);
@@ -224,12 +224,12 @@ TEST(GameUtilAsm, CheckHitsNegativeSortAlsoSortsAscending) {
 }
 
 TEST(GameUtilAsm, CheckHitsStopsAtMaxHits) {
-    CCPoly polys[2] = {Floor(0.0f), Floor(5.0f)};
+    CCPoly        polys[2] = {Floor(0.0f), Floor(5.0f)};
     CollisionInfo info = MakeInfo(polys, 2);
-    float from[4] = {0.0f, 10.0f, 0.0f, 1.0f};
-    float to[4] = {0.0f, -10.0f, 0.0f, 1.0f};
-    int   hit_polys[8] = {};
-    float hit_points[8][4] = {};
+    float         from[4] = {0.0f, 10.0f, 0.0f, 1.0f};
+    float         to[4] = {0.0f, -10.0f, 0.0f, 1.0f};
+    int           hit_polys[8] = {};
+    float         hit_points[8][4] = {};
 
     EXPECT_EQ(CheckHits(&info, from, to, 1, hit_polys, hit_points, 0, 0), 1);
     EXPECT_EQ(hit_polys[0], 0);
@@ -255,54 +255,54 @@ TEST(GameUtilAsm, TestVUnewZeroMatrixLeavesAccumulatorUnchanged) {
 }
 
 TEST(GameUtilAsm, CheckHitReturnsMinusOneForSegmentLyingInPlane) {
-    CCPoly polys[1] = {Floor(0.0f)};
+    CCPoly        polys[1] = {Floor(0.0f)};
     CollisionInfo info = MakeInfo(polys, 1);
-    float from[4] = {0.0f, 0.0f, 0.0f, 1.0f};
-    float to[4] = {1.0f, 0.0f, 0.0f, 1.0f};
-    float hit[4] = {};
+    float         from[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+    float         to[4] = {1.0f, 0.0f, 0.0f, 1.0f};
+    float         hit[4] = {};
 
     EXPECT_EQ(CheckHit(&info, from, to, hit, 1, 0), -1);
 }
 
 TEST(GameUtilAsm, CheckHitZeroLengthSegmentAboveFloorReturnsMinusOne) {
-    CCPoly polys[1] = {Floor(0.0f)};
+    CCPoly        polys[1] = {Floor(0.0f)};
     CollisionInfo info = MakeInfo(polys, 1);
-    float from[4] = {0.0f, 10.0f, 0.0f, 1.0f};
-    float to[4] = {0.0f, 10.0f, 0.0f, 1.0f};
-    float hit[4] = {};
+    float         from[4] = {0.0f, 10.0f, 0.0f, 1.0f};
+    float         to[4] = {0.0f, 10.0f, 0.0f, 1.0f};
+    float         hit[4] = {};
 
     EXPECT_EQ(CheckHit(&info, from, to, hit, 1, 0), -1);
 }
 
 TEST(GameUtilAsm, CheckHitsEmptyPolygonListReturnsZeroForSort) {
-    CCPoly polys[1] = {Floor(0.0f)};
+    CCPoly        polys[1] = {Floor(0.0f)};
     CollisionInfo info = MakeInfo(polys, 0);
-    float from[4] = {0.0f, 10.0f, 0.0f, 1.0f};
-    float to[4] = {0.0f, -10.0f, 0.0f, 1.0f};
-    int   hit_polys[8] = {};
-    float hit_points[8][4] = {};
+    float         from[4] = {0.0f, 10.0f, 0.0f, 1.0f};
+    float         to[4] = {0.0f, -10.0f, 0.0f, 1.0f};
+    int           hit_polys[8] = {};
+    float         hit_points[8][4] = {};
 
     EXPECT_EQ(CheckHits(&info, from, to, 8, hit_polys, hit_points, 1, 0), 0);
 }
 
 TEST(GameUtilAsm, CheckHitsZeroMaxHitsReturnsZero) {
-    CCPoly polys[2] = {Floor(0.0f), Floor(5.0f)};
+    CCPoly        polys[2] = {Floor(0.0f), Floor(5.0f)};
     CollisionInfo info = MakeInfo(polys, 2);
-    float from[4] = {0.0f, 10.0f, 0.0f, 1.0f};
-    float to[4] = {0.0f, -10.0f, 0.0f, 1.0f};
-    int   hit_polys[8] = {};
-    float hit_points[8][4] = {};
+    float         from[4] = {0.0f, 10.0f, 0.0f, 1.0f};
+    float         to[4] = {0.0f, -10.0f, 0.0f, 1.0f};
+    int           hit_polys[8] = {};
+    float         hit_points[8][4] = {};
 
     EXPECT_EQ(CheckHits(&info, from, to, 0, hit_polys, hit_points, 0, 0), 0);
 }
 
 TEST(GameUtilAsm, CheckHitsSortKeepsArrayOrderForTiedDistances) {
-    CCPoly polys[3] = {Floor(0.0f), Floor(5.0f), Floor(0.0f)};
+    CCPoly        polys[3] = {Floor(0.0f), Floor(5.0f), Floor(0.0f)};
     CollisionInfo info = MakeInfo(polys, 3);
-    float from[4] = {0.0f, 10.0f, 0.0f, 1.0f};
-    float to[4] = {0.0f, -10.0f, 0.0f, 1.0f};
-    int   hit_polys[8] = {};
-    float hit_points[8][4] = {};
+    float         from[4] = {0.0f, 10.0f, 0.0f, 1.0f};
+    float         to[4] = {0.0f, -10.0f, 0.0f, 1.0f};
+    int           hit_polys[8] = {};
+    float         hit_points[8][4] = {};
 
     EXPECT_EQ(CheckHits(&info, from, to, 8, hit_polys, hit_points, 1, 0), 3);
     EXPECT_EQ(hit_polys[0], 1);

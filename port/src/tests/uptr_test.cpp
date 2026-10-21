@@ -17,7 +17,7 @@ unsigned char *HighBlock() {
 }
 
 uptr AddressValue(const void *pointer) {
-    return (uptr) pointer;
+    return reinterpret_cast<uptr>(pointer);
 }
 
 struct Holder {
@@ -25,7 +25,7 @@ struct Holder {
 };
 
 unsigned char *PointerValue(const Holder &holder) {
-    return (unsigned char *) holder.address;
+    return reinterpret_cast<unsigned char *>(holder.address);
 }
 
 } // namespace
@@ -43,11 +43,11 @@ TEST(Uptr, AddressAbove4GiBRoundTripsThroughOffset) {
         GTEST_SKIP() << "the arena has no block above 4 GiB";
     }
 
-    const uptr offset = 0x1234;
-    unsigned char *moved = (unsigned char *) ((uptr) base + offset);
+    const uptr     offset = 0x1234;
+    auto          *moved = reinterpret_cast<unsigned char *>(reinterpret_cast<uptr>(base) + offset);
 
     EXPECT_EQ(moved, base + offset);
-    EXPECT_EQ((uptr) moved >> 32, (uptr) base >> 32);
+    EXPECT_EQ(reinterpret_cast<uptr>(moved) >> 32, reinterpret_cast<uptr>(base) >> 32);
 }
 
 TEST(Uptr, MenuCalcBufAlignmentKeepsHighAddress) {
@@ -58,11 +58,11 @@ TEST(Uptr, MenuCalcBufAlignmentKeepsHighAddress) {
 
     for (uptr misalignment : {uptr{0x10}, uptr{0x40}}) {
         SCOPED_TRACE(misalignment);
-        u_long128 *input = (u_long128 *) (base + misalignment);
+        auto      *input = reinterpret_cast<u_long128 *>(base + misalignment);
         u_long128 *aligned = MenuCalcBufAlignment(input);
 
-        const uptr in = (uptr) input;
-        const uptr out = (uptr) aligned;
+        const uptr in = reinterpret_cast<uptr>(input);
+        const uptr out = reinterpret_cast<uptr>(aligned);
         EXPECT_GE(out, in);
         EXPECT_LE(out - in, 64u);
         EXPECT_EQ(out % 64, 0u);
@@ -77,8 +77,8 @@ TEST(Uptr, FieldAndReturnKeepHighAddress) {
     }
 
     unsigned char *target = base + 0x80;
-    Holder holder{AddressValue(target)};
+    Holder         holder{AddressValue(target)};
 
     EXPECT_EQ(PointerValue(holder), target);
-    EXPECT_EQ(holder.address >> 32, (uptr) base >> 32);
+    EXPECT_EQ(holder.address >> 32, reinterpret_cast<uptr>(base) >> 32);
 }

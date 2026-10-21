@@ -15,7 +15,7 @@ namespace {
 
 constexpr int kQuadwords = 4096;
 constexpr std::size_t kBytes = static_cast<std::size_t>(kQuadwords) * 16;
-constexpr int kHeader = static_cast<int>((sizeof(mgMEMORY_BLOCK) + 15) / 16);
+constexpr int         kHeader = static_cast<int>((sizeof(mgMEMORY_BLOCK) + 15) / 16);
 
 std::uintptr_t AddressOf(const void *pointer) {
     return reinterpret_cast<std::uintptr_t>(pointer);
@@ -24,8 +24,6 @@ std::uintptr_t AddressOf(const void *pointer) {
 void NameArena(mgCMemory &memory, const char *name) {
     std::strncpy(memory.name, name, sizeof memory.name);
 }
-
-} // namespace
 
 // Each buffer is a child view of an ArenaBlock, so the manager runs retail's arithmetic on it as-is.
 class MgMemory : public testing::Test {
@@ -44,6 +42,8 @@ protected:
 
     u_long128 *buffer_ = nullptr;
 };
+
+} // namespace
 
 TEST_F(MgMemory, StackAllocationStopsAtRetailCapacity) {
     mgCMemory memory;
@@ -133,7 +133,7 @@ TEST_F(MgMemory, StackPushPopAndReset) {
     memory.stSetBuffer(buffer_, 100);
 
     memory.Alloc(10);
-    const int mark = memory.stGetUsed();
+    const int  mark = memory.stGetUsed();
     u_long128 *scratch = memory.Alloc(20);
     EXPECT_EQ(scratch, buffer_ + 10);
 
@@ -386,4 +386,3 @@ TEST_F(MgMemory, UsageTracksTheHeapHighWaterMark) {
 
     MemoryForget(memory);
 }
-

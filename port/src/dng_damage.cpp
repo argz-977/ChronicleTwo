@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <numbers>
 #include <unordered_map>
 
 #include "dng_hud.hpp"
@@ -22,7 +23,7 @@ struct ScoreEmission {
 std::unordered_map<const void *, ScoreEmission> generations;
 uint64_t                                        next_generation = 0;
 
-void Emit(const void *score) { generations[score] = {++next_generation, {}}; }
+void Emit(const void *score) { generations[score] = {.generation = ++next_generation, .anchor = {}}; }
 
 gfx::Interp2D Presentation(const void *score, const int *screen) {
     auto found = generations.find(score);
@@ -32,7 +33,7 @@ gfx::Interp2D Presentation(const void *score, const int *screen) {
     if (found->second.anchor.Update(screen[0] / 16, screen[1] / 16)) {
         found->second.generation = ++next_generation;
     }
-    return {static_cast<gfx::InterpKey>(reinterpret_cast<uintptr_t>(score)), found->second.generation};
+    return {.key = static_cast<gfx::InterpKey>(reinterpret_cast<uintptr_t>(score)), .generation = found->second.generation};
 }
 
 void BeginScore(CPreSprite &prim) {
@@ -55,7 +56,7 @@ PORT_OVERRIDE void CDamageScore::SetValue(float *position, int value) {
     std::sprintf(text, "%d", value);
     length = std::strlen(text);
     for (int i = 0; i < length; ++i) {
-        bounce[i] = PI;
+        bounce[i] = std::numbers::pi_v<float>;
     }
 }
 
@@ -66,7 +67,7 @@ PORT_OVERRIDE void CDamageScore::SetSprite(float *position, int u, int v, int wi
     phase = DAMAGE_SCORE_PHASE_APPEAR;
     active = true;
     sprite = true;
-    bounce[0] = PI;
+    bounce[0] = std::numbers::pi_v<float>;
     sprite_w = width;
     sprite_h = height;
     sprite_u = u;

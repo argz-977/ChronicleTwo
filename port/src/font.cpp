@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "font_port.hpp"
+#include "log/log.hpp"
 #include "mainloop.hpp"
 #include "mg_drawprim_port.hpp"
 #include "mglib_port.hpp"
@@ -46,12 +47,12 @@ bool Ready() {
                 loaded = ttffont::Load(file);
             }
             if (loaded) {
-                std::fprintf(stderr, "font: sharp ASCII text from %s\n", PathsDisplay(file).c_str());
+                CT_LOG_INFO(Gfx, "font: sharp ASCII text from {}", PathsDisplay(file));
             }
             break; // A present save override wins, including when it cannot be loaded.
         }
         if (!loaded) {
-            std::fprintf(stderr, "font: no usable lang/font.ttf; keeping original text (docs/PC.md)\n");
+            CT_LOG_INFO(Gfx, "font: no usable lang/font.ttf; keeping original text (docs/PC.md)");
         }
     }
     return loaded;
@@ -120,8 +121,8 @@ bool DrawSharp(const CFont &font, mgCDrawPrim &prim, int glyph, int x, int y, in
     if (ch == 0x20) {
         return true;
     }
-    const float cell_w = static_cast<float>(font.draw_w / 2);
-    const float cell_h = static_cast<float>(font.draw_h);
+    const auto  cell_w = static_cast<float>(font.draw_w / 2);
+    const auto  cell_h = static_cast<float>(font.draw_h);
     const auto  metrics = ttffont::GetMetrics();
     const float line = metrics.ascent + metrics.descent;
     if (!(line > 0.0f) || !(metrics.advance > 0.0f) || cell_w <= 0.0f) {
@@ -228,7 +229,7 @@ PORT_OVERRIDE void CFont::DrawChar(mgCDrawPrim *prim, int font_no, int x, int y,
     } else {
         MySetTex(page, prim);
     }
-    RECT destination{x, y, draw_w, draw_h};
+    RECT destination{.x = x, .y = y, .width = draw_w, .height = draw_h};
     if (CheckHalfFont(font_no)) {
         destination.width /= 2;
         source.width /= 2;

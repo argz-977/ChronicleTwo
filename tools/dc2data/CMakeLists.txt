@@ -10,7 +10,8 @@ target_compile_options(dc2data PRIVATE -Wall)
 
 add_executable(dc2data_bridge_test ${CMAKE_CURRENT_SOURCE_DIR}/bridge_test.cpp)
 target_link_libraries(dc2data_bridge_test PRIVATE kazarov_bridge kazarov_core)
-set_target_properties(dc2data_bridge_test PROPERTIES CXX_STANDARD 26 CXX_STANDARD_REQUIRED ON)
+set_target_properties(dc2data_bridge_test PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
+    CXX_STANDARD 26 CXX_STANDARD_REQUIRED ON)
 add_test(NAME dc2data_bridge COMMAND dc2data_bridge_test)
 
 if(WIN32)

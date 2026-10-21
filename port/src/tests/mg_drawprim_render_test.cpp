@@ -1,3 +1,4 @@
+#include <SDL3/SDL.h>
 #include <gtest/gtest.h>
 
 #include <array>
@@ -5,6 +6,7 @@
 #include <span>
 #include <vector>
 
+#include "drawwin.hpp"
 #include "gfx/gfx.hpp"
 #include "gfx_fixture.hpp"
 #include "menudraw.hpp"
@@ -13,6 +15,7 @@
 #include "mg_texture.hpp"
 #include "mglib.hpp"
 #include "mglib_port.hpp"
+#include "nd_meswin.hpp"
 
 namespace {
 
@@ -43,6 +46,67 @@ void DrawTexturedSprite(mgCDrawPrim &prim, mgCTexture &source, std::array<float,
 
 } // namespace
 
+TEST(MgDrawPrimRender, HelpWindowTranslucentTilesHaveContinuousCoverage) {
+    dc::test::GfxFixture gfx(320, 240, 1.0f, true, 128, 96);
+    const auto           mapping = gfx::GetLogicalMapping(gfx::kMainTarget);
+    ASSERT_FLOAT_EQ(mapping.scale_x, 2.5f);
+    ASSERT_FLOAT_EQ(mapping.scale_y, 2.5f);
+
+    constexpr uint32_t       atlas_size = 256;
+    std::vector<uint32_t>    atlas(static_cast<size_t>(atlas_size) * atlas_size, dc::test::Rgba(0, 0, 0, 128));
+    const gfx::TextureHandle texture = gfx::CreateTexture({.width = atlas_size, .height = atlas_size, .format = gfx::TextureFormat::Rgba8});
+    ASSERT_NE(texture, gfx::kNullTexture);
+    ASSERT_TRUE(gfx::UpdateTextureNow(texture, 0, 0, 0, atlas_size, atlas_size, atlas.data()));
+
+    mgCMemory      memory;
+    sceVif1Packet  packet{};
+    mgRENDER_INFO  info{};
+    mgCDrawManager manager;
+    mgCDrawPrim    prim;
+    mgCTexture     source;
+    prim.draw_manager = &manager;
+    manager.render_info = &info;
+    prim.Initialize(&memory, &packet);
+    prim.write = nullptr;
+    prim.AlphaBlendEnable(1);
+    prim.TextureMapEnable(1);
+    prim.Bilinear(0);
+    prim.Texture(&source);
+
+    PrimSinkReset sink_reset;
+    int           tiles = 0;
+    mgPortSetPrimSink([&](gfx::Primitive primitive, std::span<const gfx::Vertex2D> vertices,
+                          const gfx::TextureBinding &binding, const gfx::DrawState &state) {
+        gfx::TextureBinding bound = binding;
+        bound.texture = texture;
+        bound.ignore_alpha = false;
+        gfx::Draw2D(primitive, vertices, bound, state);
+        tiles += static_cast<int>(vertices.size() / 4);
+    });
+    const int saved_abs_draw_off = MesAbsDrawOff;
+    MesAbsDrawOff = 0;
+    gfx.Frame({255, 255, 255, 255}, [&] {
+        MyMenuHelpWinDraw(&prim, {.x = 11, .y = 10, .width = 80, .height = 72}, 128);
+    });
+    MesAbsDrawOff = saved_abs_draw_off;
+
+    EXPECT_EQ(tiles, 9);
+    const auto centre = gfx.Pixel(100, 100);
+    for (int seam_x : {11 + 24, 11 + 80 - 24}) {
+        for (int dx = -1; dx <= 1; ++dx) {
+            const auto pixel = gfx.Pixel(static_cast<uint32_t>(seam_x * 2.5f) + dx, 100);
+            EXPECT_EQ(pixel, centre) << "vertical join " << seam_x << " offset " << dx;
+        }
+    }
+    for (int seam_y : {10 + 22, 10 + 72 - 22}) {
+        for (int dy = -1; dy <= 1; ++dy) {
+            const auto pixel = gfx.Pixel(100, static_cast<uint32_t>(seam_y * 2.5f) + dy);
+            EXPECT_EQ(pixel, centre) << "horizontal join " << seam_y << " offset " << dy;
+        }
+    }
+    gfx::DestroyTexture(texture);
+}
+
 // Two 1:1 nearest tiles meet at logical x 47, where a 2.5x window puts a pixel centre on the seam. The left
 // half of the texture is red, so any red pixel is a texel the seam sampled from the wrong side.
 TEST(MgDrawPrimRender, TileSeamHasNoForeignTexel) {
@@ -52,7 +116,7 @@ TEST(MgDrawPrimRender, TileSeamHasNoForeignTexel) {
     ASSERT_FLOAT_EQ(mapping.scale_x, 2.5f);
     ASSERT_FLOAT_EQ(mapping.offset_x, 0.0f);
 
-    const gfx::TextureHandle texture = gfx::CreateTexture({kTextureWidth, kTextureHeight, gfx::TextureFormat::Rgba8});
+    const gfx::TextureHandle texture = gfx::CreateTexture({.width = kTextureWidth, .height = kTextureHeight, .format = gfx::TextureFormat::Rgba8});
     ASSERT_NE(texture, gfx::kNullTexture);
     std::vector<uint8_t> texels(static_cast<size_t>(kTextureWidth) * kTextureHeight * 4);
     for (uint32_t y = 0; y < kTextureHeight; ++y) {
@@ -123,7 +187,8 @@ TEST(MgDrawPrimRender, LinearAtlasCellsKeepTopOutlinesWithoutSamplingTheNextCell
     ASSERT_FLOAT_EQ(mapping.scale_x, 2.5f);
     ASSERT_FLOAT_EQ(mapping.scale_y, 2.5f);
 
-    constexpr uint32_t width = 16, height = 64;
+    constexpr uint32_t            width = 16;
+    constexpr uint32_t            height = 64;
     const std::array<uint32_t, 4> palette = {
         dc::test::Rgba(0, 0, 0, 0), dc::test::Rgba(0, 0, 0),
         dc::test::Rgba(255, 0, 0), dc::test::Rgba(0, 255, 0),
@@ -142,8 +207,8 @@ TEST(MgDrawPrimRender, LinearAtlasCellsKeepTopOutlinesWithoutSamplingTheNextCell
     for (size_t i = 0; i < indices.size(); ++i) {
         rgba[i] = palette[indices[i]];
     }
-    const auto color = gfx::CreateTexture({width, height, gfx::TextureFormat::Rgba8});
-    const auto index = gfx::CreateTexture({width, height, gfx::TextureFormat::Index8});
+    const auto color = gfx::CreateTexture({.width = width, .height = height, .format = gfx::TextureFormat::Rgba8});
+    const auto index = gfx::CreateTexture({.width = width, .height = height, .format = gfx::TextureFormat::Index8});
     const auto clut = gfx::CreatePalette();
     ASSERT_NE(color, gfx::kNullTexture);
     ASSERT_NE(index, gfx::kNullTexture);

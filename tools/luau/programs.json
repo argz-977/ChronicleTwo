@@ -1,0 +1,172 @@
+{
+ "schema": 1,
+ "generated_from": "ps2/include enums; tools/luau/test_programs.py checks it",
+ "kinds": {
+  "action": {
+   "enum": "ACTION_PROG",
+   "header": "ps2/include/actionchara.hpp",
+   "programs": [
+    {
+     "no": 100,
+     "enum": "ACTION_PROG_INIT",
+     "name": "init",
+     "description": "Sets the character up when its script is initialised."
+    },
+    {
+     "no": 150,
+     "enum": "ACTION_PROG_RESET",
+     "name": "reset",
+     "description": "Puts the character back into its normal state."
+    },
+    {
+     "no": 200,
+     "enum": "ACTION_PROG_MAIN",
+     "name": "loop",
+     "description": "Runs the character's normal behaviour."
+    },
+    {
+     "no": 500,
+     "enum": "ACTION_PROG_DAMAGE_SMALL",
+     "name": "on_small_damage",
+     "description": "Reacts to a small hit."
+    },
+    {
+     "no": 550,
+     "enum": "ACTION_PROG_HOLD",
+     "name": "on_hold",
+     "description": "Holds the character in place."
+    },
+    {
+     "no": 600,
+     "enum": "ACTION_PROG_DAMAGE_LARGE",
+     "name": "on_large_damage",
+     "description": "Reacts to a large hit."
+    },
+    {
+     "no": 700,
+     "enum": "ACTION_PROG_MELEE_HIT",
+     "name": "on_melee_hit",
+     "description": "Follows up a melee hit that the character has landed."
+    },
+    {
+     "no": 1400,
+     "enum": "ACTION_PROG_DEAD",
+     "name": "on_death",
+     "description": "Runs the character's death."
+    },
+    {
+     "no": 1500,
+     "enum": "ACTION_PROG_LAND",
+     "name": "on_land",
+     "description": "Lands the character after a fall."
+    }
+   ]
+  },
+  "monster": {
+   "enum": "MONSTER_PROG",
+   "header": "ps2/include/monster.hpp",
+   "programs": [
+    {
+     "no": 100,
+     "enum": "MONSTER_PROG_INIT",
+     "name": "init",
+     "description": "Sets the monster up when it is placed."
+    },
+    {
+     "no": 200,
+     "enum": "MONSTER_PROG_MAIN",
+     "name": "loop",
+     "description": "Runs the monster's normal behaviour."
+    },
+    {
+     "no": 400,
+     "enum": "MONSTER_PROG_STATUS",
+     "name": "on_status_hit",
+     "description": "Reacts to a hit while greyed out, or to a hit that greys it out."
+    },
+    {
+     "no": 500,
+     "enum": "MONSTER_PROG_DAMAGE",
+     "name": "on_damage",
+     "description": "Reacts to a hit that staggers it."
+    },
+    {
+     "no": 600,
+     "enum": "MONSTER_PROG_KNOCK",
+     "name": "on_knockdown",
+     "description": "Reacts to a hit that knocks it over."
+    },
+    {
+     "no": 700,
+     "enum": "MONSTER_PROG_GUARD",
+     "name": "on_guard",
+     "description": "Guards against a hit."
+    },
+    {
+     "no": 800,
+     "enum": "MONSTER_PROG_ESCAPE_0",
+     "name": "on_dodge_1",
+     "description": "Dodges the target's first kind of attack."
+    },
+    {
+     "no": 900,
+     "enum": "MONSTER_PROG_ESCAPE_1",
+     "name": "on_dodge_2",
+     "description": "Dodges the target's second kind of attack."
+    },
+    {
+     "no": 1000,
+     "enum": "MONSTER_PROG_DEAD",
+     "name": "on_death",
+     "description": "Runs the monster's death."
+    },
+    {
+     "no": 1100,
+     "enum": "MONSTER_PROG_CATCH",
+     "name": "on_caught",
+     "description": "Reacts to being caught by a frame that lifts it."
+    },
+    {
+     "no": 1200,
+     "enum": "MONSTER_PROG_LAND",
+     "name": "on_land",
+     "description": "Lands the monster after it has been thrown."
+    },
+    {
+     "no": 1400,
+     "enum": "MONSTER_PROG_PIYORI",
+     "name": "on_stun",
+     "description": "Stuns the monster."
+    }
+   ]
+  },
+  "effect": {
+   "enum": "EFFECT_SCRIPT_PROG",
+   "header": "ps2/include/effscript.hpp",
+   "programs": [
+    {
+     "no": 100,
+     "enum": "Init",
+     "name": "init",
+     "description": "Initialisation program that every effect script defines empty; the engine never runs it."
+    },
+    {
+     "no": 200,
+     "enum": "Start",
+     "name": "on_start",
+     "description": "Runs the effect from the frame it is created."
+    },
+    {
+     "no": 300,
+     "enum": "EFFECT_SCRIPT_PROG_FINISH",
+     "name": "on_finish",
+     "description": "Ends an effect."
+    }
+   ],
+   "port": {
+    "enum": "EffectScriptProgram",
+    "header": "port/src/effscript_port.hpp"
+   }
+  }
+ }
+}

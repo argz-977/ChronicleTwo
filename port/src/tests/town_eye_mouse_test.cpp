@@ -20,7 +20,8 @@ TEST_P(TownEyeMouse, NativeStateAndBothLookTargetsTurnOnceAndDropOtherOwnersMoti
     TakePhotoMode = photo ? TAKE_PHOTO_AIM : TAKE_PHOTO_OFF;
     const int   old_loop = PortLoopNo;
     const auto  old_mode = PortEditViewMode;
-    const float old_heading = PortEditEyeHeading, old_tilt = PortEditEyeTilt;
+    const float old_heading = PortEditEyeHeading;
+    const float old_tilt = PortEditEyeTilt;
     const auto  old_lock = GamePad__2.key_lock;
     const auto  old_debug = DebugInfo.debug_camera;
     const int   old_ladder = PortEditLadderMode;
@@ -106,7 +107,8 @@ TEST(TownEyeCamera, ContinuousRetailUpdatesDoNotCutButEntryExitAndAuthoredCutsDo
     const auto     old_mode = PortEditViewMode;
     const auto     old_loop = PortLoopNo;
     const auto     old_pad = GamePad__2;
-    const auto     old_heading = PortEditEyeHeading, old_tilt = PortEditEyeTilt;
+    const auto     old_heading = PortEditEyeHeading;
+    const auto     old_tilt = PortEditEyeTilt;
     CScene         scene;
     CCharacter2    chara;
     CCameraControl camera;
@@ -130,7 +132,8 @@ TEST(TownEyeCamera, ContinuousRetailUpdatesDoNotCutButEntryExitAndAuthoredCutsDo
         PortEditViewMode = mode;
         generation = mgPortCameraGeneration();
         PortEditCameraControl(&scene, &pad);
-        const float x = camera.pos[0], heading = camera.angle_h;
+        const float x = camera.pos[0];
+        const float heading = camera.angle_h;
         chara.SetPosition(x + 2, 0, 0);
         GamePad__2.pad[0].left_x = 220;
         PortEditCameraControl(&scene, &pad);

@@ -11,8 +11,7 @@ void SetEffectScriptFunc();
 int  SetEffectScript(CRunScript *script, char *program, mgCMemory *memory);
 
 TEST(EffectDistance, LengthCallbackPreservesTheCallerAndWritesTheOutputReference) {
-    // Run in RelWithDebInfo too: the fourth vector lane overwrote a saved register there,
-    // while Debug's stack layout let the same callback return without a crash.
+    // A write to the fourth vector lane clobbers a saved register in RelWithDebInfo; Debug's stack layout hides it.
     std::vector<u_long128> storage(256);
     mgCMemory              memory;
     memory.stSetBuffer(storage.data(), storage.size());
@@ -45,8 +44,7 @@ TEST(EffectDistance, LengthCallbackPreservesTheCallerAndWritesTheOutputReference
 }
 
 TEST(EffectDistance, BetweenTwoVectorsPreservesInputsAndOutputReference) {
-    // Run in RelWithDebInfo too: the fourth vector lane overwrote a saved register there,
-    // while Debug's stack layout let the same callback return without a crash.
+    // A write to the fourth vector lane clobbers a saved register in RelWithDebInfo; Debug's stack layout hides it.
     std::vector<u_long128> storage(256);
     mgCMemory              memory;
     memory.stSetBuffer(storage.data(), storage.size());

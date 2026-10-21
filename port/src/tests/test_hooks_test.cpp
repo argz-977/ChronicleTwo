@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 
-#include <filesystem>
-#include <format>
+#include <vector>
 
 #include "debug_fixture.hpp"
 #include "gamepad.hpp"
@@ -26,12 +25,12 @@ TEST(TestHooks, JumpAcceptsModesAndBounds) {
     EXPECT_EQ(jump.map, 6);
     EXPECT_TRUE(GameParseJump("event:26010", jump));
     EXPECT_EQ(jump.event, 26010);
-    for (auto mode : {"title", "opening", "menu"}) {
+    for (const auto *mode : {"title", "opening", "menu"}) {
         EXPECT_TRUE(GameParseJump(mode, jump));
     }
-    for (auto bad : {"", "bogus", "title:0", "town:", "town:-1", "town:189", "town:1junk",
-                     "dungeon:", "dungeon:7", "dungeon:0:0", "dungeon:0:9", "dungeon:6:39", "dungeon:0:100", "dungeon:0:1:2",
-                     "event", "event:0", "event:-1", "event:2147483648"}) {
+    for (const auto *bad : {"", "bogus", "title:0", "town:", "town:-1", "town:189", "town:1junk",
+                            "dungeon:", "dungeon:7", "dungeon:0:0", "dungeon:0:9", "dungeon:6:39", "dungeon:0:100", "dungeon:0:1:2",
+                            "event", "event:0", "event:-1", "event:2147483648"}) {
         SCOPED_TRACE(bad);
         EXPECT_FALSE(GameParseJump(bad, jump));
     }
@@ -41,7 +40,7 @@ TEST(TestHooks, GiveRejectsMalformedListsWithoutChangingThePreviousList) {
     std::vector<int> items;
     ASSERT_TRUE(GameParseGive("2,24,303", items));
     EXPECT_EQ(items, (std::vector<int>{2, 24, 303}));
-    for (auto bad : {"", "1,", ",1", "1,,2", "0", "-1", "32768", "2 3", "2x"}) {
+    for (const auto *bad : {"", "1,", ",1", "1,,2", "0", "-1", "32768", "2 3", "2x"}) {
         EXPECT_FALSE(GameParseGive(bad, items));
         EXPECT_EQ(items, (std::vector<int>{2, 24, 303}));
     }

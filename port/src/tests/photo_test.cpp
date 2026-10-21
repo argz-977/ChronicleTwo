@@ -33,7 +33,7 @@ class PhotoRenderer {
 public:
     PhotoRenderer() {
         SetEnv("VK_LAYER_VALIDATE_SYNC", "1", 0);
-        WindowConfig window{512, 480, true};
+        WindowConfig window{.width = 512, .height = 480, .headless = true};
         window.vulkan = false;
         WindowInit(window);
 
@@ -85,8 +85,8 @@ gfx::DrawState OpaqueState() {
 
 // Left half red, right half blue, on the frame being drawn.
 void DrawHalves() {
-    const float width = static_cast<float>(mgScreenWidth);
-    const float height = static_cast<float>(mgScreenHeight);
+    const auto  width = static_cast<float>(mgScreenWidth);
+    const auto  height = static_cast<float>(mgScreenHeight);
     const float middle = width / 2.0f;
 
     const std::vector<gfx::Vertex2D> red = {
@@ -127,10 +127,10 @@ TEST(Photo, ShutterSpriteCapturesTheFrame) {
     mgGetFrameBuffer(&frame);
     mgSetPkFrameBuffer(&work);
 
-    const float work_width = static_cast<float>(work.width);
-    const float work_height = static_cast<float>(work.height);
-    const float frame_width = static_cast<float>(frame.width);
-    const float frame_height = static_cast<float>(frame.height);
+    const auto                       work_width = static_cast<float>(work.width);
+    const auto                       work_height = static_cast<float>(work.height);
+    const auto                       frame_width = static_cast<float>(frame.width);
+    const auto                       frame_height = static_cast<float>(frame.height);
     const std::vector<gfx::Vertex2D> sprite = {
         Corner(0.0f, 0.0f, 0.0f, 0.0f, 0x80, 0x80, 0x80),
         Corner(work_width, 0.0f, frame_width, 0.0f, 0x80, 0x80, 0x80),
@@ -153,9 +153,9 @@ TEST(Photo, ShutterSpriteCapturesTheFrame) {
     ASSERT_TRUE(mgPortCanonicalReadColor(target, rgba, width, height));
 
     const gfx::LogicalMapping mapping = gfx::GetLogicalMapping(target);
-    const auto at = [&](float x, float y) {
-        const size_t px = static_cast<size_t>(x * mapping.scale_x + mapping.offset_x);
-        const size_t py = static_cast<size_t>(y * mapping.scale_y + mapping.offset_y);
+    const auto                at = [&](float x, float y) {
+        const auto px = static_cast<size_t>(x * mapping.scale_x + mapping.offset_x);
+        const auto py = static_cast<size_t>(y * mapping.scale_y + mapping.offset_y);
         return &rgba[(py * width + px) * 4];
     };
 
@@ -180,7 +180,7 @@ TEST(Photo, ShutterReadbackContainsTheFirstCaptureAndItsCurrentSubjectDepth) {
     work.tex0.TBW = 1;
     work.tex0.PSM = SCE_GS_PSMCT16;
     WorkTex = &work;
-    CPadControl pad;
+    CPadControl pad{};
     auto        photos = std::make_unique<CInventUserData>();
     for (float depth : {0.25f, 0.75f}) {
         TakePhotoMode = TAKE_PHOTO_SHUTTER;

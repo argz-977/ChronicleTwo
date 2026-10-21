@@ -72,10 +72,12 @@ inline uint32_t Tag(int count) {
 inline Quad Expand(const Sprite3dParams& p, const Sprite3dRecord& r, int mode) {
     const Vec4 pclip = Mul(p.ls, r.pos);
     const float q = ReciprocalW(pclip.w);
-    const Vec4 c{pclip.x * q, pclip.y * q, pclip.z * q, q};
+    const Vec4  c{.x = pclip.x * q, .y = pclip.y * q, .z = pclip.z * q, .w = q};
 
-    const int32_t u0x = Ftoi4(r.uv0.x), u0y = Ftoi4(r.uv0.y);
-    const int32_t u1x = Ftoi4(r.uv1.x), u1y = Ftoi4(r.uv1.y);
+    const int32_t u0x = Ftoi4(r.uv0.x);
+    const int32_t u0y = Ftoi4(r.uv0.y);
+    const int32_t u1x = Ftoi4(r.uv1.x);
+    const int32_t u1y = Ftoi4(r.uv1.y);
 
     const float fog = FogValue(p.fog, q);
 
@@ -88,8 +90,8 @@ inline Quad Expand(const Sprite3dParams& p, const Sprite3dRecord& r, int mode) {
     if (mode == 0) {
         const float hqx = (r.size.x * p.vs0.x) * 0.5f * q;
         const float hqy = (r.size.y * p.vs1.y) * 0.5f * q;
-        const Vec4 min{c.x - hqx, c.y - hqy, c.z, fog};
-        const Vec4 max{c.x + hqx, c.y + hqy, c.z, fog};
+        const Vec4  min{.x = c.x - hqx, .y = c.y - hqy, .z = c.z, .w = fog};
+        const Vec4  max{.x = c.x + hqx, .y = c.y + hqy, .z = c.z, .w = fog};
 
         out.drawn = Passes(p, min.x, min.y, max.x, max.y, q);
         const bool adc = !out.drawn;
@@ -100,16 +102,16 @@ inline Quad Expand(const Sprite3dParams& p, const Sprite3dRecord& r, int mode) {
         return out;
     }
 
-    const Vec4 a = Vec4{r.size.w, r.size.z, 0.0f, 0.0f} * p.vs0.x * (r.size.x * 0.5f) * q;
-    const Vec4 b = Vec4{-r.size.z, r.size.w, 0.0f, 0.0f} * p.vs1.y * (r.size.y * 0.5f) * q;
+    const Vec4 a = Vec4{.x = r.size.w, .y = r.size.z, .z = 0.0f, .w = 0.0f} * p.vs0.x * (r.size.x * 0.5f) * q;
+    const Vec4 b = Vec4{.x = -r.size.z, .y = r.size.w, .z = 0.0f, .w = 0.0f} * p.vs1.y * (r.size.y * 0.5f) * q;
     const Vec4 sum = a + b;
     const Vec4 diff = b - a;
 
     const Vec4 corner[4] = {
-        {c.x - sum.x, c.y - sum.y, c.z, fog},
-        {c.x - diff.x, c.y - diff.y, c.z, fog},
-        {c.x + diff.x, c.y + diff.y, c.z, fog},
-        {c.x + sum.x, c.y + sum.y, c.z, fog},
+        {.x = c.x - sum.x,  .y = c.y - sum.y,  .z = c.z, .w = fog},
+        {.x = c.x - diff.x, .y = c.y - diff.y, .z = c.z, .w = fog},
+        {.x = c.x + diff.x, .y = c.y + diff.y, .z = c.z, .w = fog},
+        {.x = c.x + sum.x,  .y = c.y + sum.y,  .z = c.z, .w = fog},
     };
     const float min_x = std::min({corner[0].x, corner[1].x, corner[2].x, corner[3].x});
     const float max_x = std::max({corner[0].x, corner[1].x, corner[2].x, corner[3].x});

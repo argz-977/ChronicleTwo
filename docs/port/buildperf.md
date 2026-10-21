@@ -35,3 +35,22 @@ The first observation used the existing build tree; it was not a clean build. A 
 Ninja's log attributes about 1.0 s to the settled Cargo command and 0.9 s to Corrosion's subsequent comparison/copy of a 239 MiB static archive. Runtime DLL comparisons take about 0.6 s and overlap Cargo. Cargo reports 0.5–0.8 s internally. These checks retain Cargo dependency discovery and restoration of missing runtime DLLs. The measured settled cost does not justify bypassing them. No compile-job or optimization changes were made from these observations.
 
 The launcher streams native stdout and stderr to the console and `build.log`, and prints the build duration and exit status. A delayed native fixture verifies that both streams arrive before completion, that more than 65 lines survive in the log, and that exits 0 and 23 propagate. The native process stays in PowerShell's foreground pipeline; interactive Ctrl+C was not exercised by the automated checks. PowerShell 7.0/7.1's redirected-stderr compatibility path is included, but execution was verified with 7.6.5. Release, clean-build and first-run dependency-download timings were not measured.
+
+## Debug information size and link time
+
+Measured on 2026-10-18 with llvm-mingw 20260922 (clang 23.1.2), Ninja 1.13.2 and 32 jobs, building `darkchronicle` in Release at `abe0d5d9`, before the crash handler and logger existed. Each link time is ninja's record for relinking after deleting the exe, with no compile. Other builds were running on the host, so link times are diagnostic.
+
+| Configuration | `darkchronicle.exe` | PDB | Link (s) |
+| --- | ---: | ---: | --- |
+| Release, no `-g` (before) | 27,837,440 B | - | 0.57, 0.58, 0.77 |
+| Release, `CT_SYMBOLS=embedded` (`-gline-tables-only`) | 61,396,992 B | - | 0.72, 0.72, 0.74, 0.75, 1.11 |
+| Release, `CT_SYMBOLS=split` (adds `-gdwarf -gcodeview`, `--pdb`) | 54,619,136 B | 29,921,280 B | 0.63, 0.68, 0.68, 1.40, 2.08 |
+| RelWithDebInfo (`windows-x64-release`, full `-g`), for comparison | 208,809,984 B | - | not measured |
+
+Line tables add 33.6 MB to the Release exe. The DWARF sections grow from 4.2 MB (from linked libraries, none of it the game's) to 37.8 MB: `.debug_info` 14.3 MB, `.debug_str` 10.2 MB, `.debug_line` 8.3 MB, `.debug_ranges` 4.9 MB. With `--pdb`, lld moves the COFF symbol table into the PDB, so the split exe is 6.8 MB smaller. The extra link time from either mode is within run-to-run noise. Recompiling every C++ unit after the flag change took 120 s (`embedded`) and 105 s (`split`) on the loaded host. With the crash handler and logger linked in, a Release `embedded` exe of the working tree was 68,239,360 B.
+
+## Incremental build invariants
+
+- Only one ninja may write a build directory. Two concurrent builds interleave `.ninja_deps` records; ninja then drops every record after the damage on each load and, on Windows, never truncates the file, so every later build recompiles everything ("stored deps info out of date"). `tools/windows/build.ps1` holds `<build>/.kazarov-build.lock` for the build and runs `ninja -t recompact` (about 0.3 s) beforehand, which rewrites the logs from their readable records. Building a directory directly with `ninja`/`cmake --build` while another build runs bypasses the lock.
+- Linking `kazarov_bridge` orders every compile of a target after the whole Cargo build. Only the port sources that include `kazarov_bridge/` or `rust/cxx.h` are compiled in `ct_port_bridge`; the rest of `ct_port` compiles alongside Cargo.
+- The button glyphs and Windows runtime DLLs are copied by commands with declared outputs, so an up-to-date build runs neither.

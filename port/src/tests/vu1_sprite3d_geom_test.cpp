@@ -17,23 +17,25 @@ namespace oracle = dc::vu1::sprite3d_oracle;
 // Section 10 common inputs: near = 1, far = 200, fog {0.5, 1.0, 0.0, 8.0}.
 Sprite3dParams CommonParams() {
     Sprite3dParams p{};
-    p.ls = Mat4{{Vec4{2, 0, 0, 0}, Vec4{0, 2, 0, 0}, Vec4{0, 0, 1, 0}, Vec4{8192, 8192, 40, 4}}};
-    p.vs0 = Vec4{2, 0, 0, 0};
-    p.vs1 = Vec4{0, 2, 0, 0};
-    p.fog = Fog{0.5f, 1.0f, 0.0f, 8.0f};
-    p.guard_min = Vec4{1, 1, 0, 1};
-    p.guard_max = Vec4{4095, 4095, 0, 200};
+    p.ls = Mat4{
+        {Vec4{.x = 2, .y = 0, .z = 0, .w = 0}, Vec4{.x = 0, .y = 2, .z = 0, .w = 0}, Vec4{.x = 0, .y = 0, .z = 1, .w = 0}, Vec4{.x = 8192, .y = 8192, .z = 40, .w = 4}}
+    };
+    p.vs0 = Vec4{.x = 2, .y = 0, .z = 0, .w = 0};
+    p.vs1 = Vec4{.x = 0, .y = 2, .z = 0, .w = 0};
+    p.fog = Fog{.offset = 0.5f, .near_value = 1.0f, .far_value = 0.0f, .scale = 8.0f};
+    p.guard_min = Vec4{.x = 1, .y = 1, .z = 0, .w = 1};
+    p.guard_max = Vec4{.x = 4095, .y = 4095, .z = 0, .w = 200};
     return p;
 }
 
 // Section 10: pos (0,0,0,1), size (w 8, h 6, sin 0, cos 0), colour (128,128,128,96), UV (0,0)-(16,16).
 Sprite3dRecord CommonRecord() {
     Sprite3dRecord r{};
-    r.pos = Vec4{0, 0, 0, 1};
-    r.size = Vec4{8, 6, 0, 0};
-    r.colour = Vec4{128, 128, 128, 96};
-    r.uv0 = Vec4{0, 0, 0, 0};
-    r.uv1 = Vec4{16, 16, 0, 0};
+    r.pos = Vec4{.x = 0, .y = 0, .z = 0, .w = 1};
+    r.size = Vec4{.x = 8, .y = 6, .z = 0, .w = 0};
+    r.colour = Vec4{.x = 128, .y = 128, .z = 128, .w = 96};
+    r.uv0 = Vec4{.x = 0, .y = 0, .z = 0, .w = 0};
+    r.uv1 = Vec4{.x = 16, .y = 16, .z = 0, .w = 0};
     return r;
 }
 
@@ -66,8 +68,8 @@ void ExpectNativeAgreesWithOracle(const Sprite3dParams& p, const Sprite3dRecord&
         EXPECT_TRUE(std::isfinite(nv.x) && std::isfinite(nv.y) && std::isfinite(nv.z)) << "vertex " << i;
         EXPECT_TRUE(std::isfinite(nv.u) && std::isfinite(nv.v) && std::isfinite(nv.fog)) << "vertex " << i;
 
-        const int16_t dx = static_cast<int16_t>(static_cast<uint16_t>(Ftoi4(nv.x)) - ov.x);
-        const int16_t dy = static_cast<int16_t>(static_cast<uint16_t>(Ftoi4(nv.y)) - ov.y);
+        const auto dx = static_cast<int16_t>(static_cast<uint16_t>(Ftoi4(nv.x)) - ov.x);
+        const auto dy = static_cast<int16_t>(static_cast<uint16_t>(Ftoi4(nv.y)) - ov.y);
         EXPECT_LE(std::abs(dx), 1) << "vertex " << i << " x";
         EXPECT_LE(std::abs(dy), 1) << "vertex " << i << " y";
 
@@ -127,7 +129,7 @@ TEST(Vu1Sprite3dGeom, Case1NonRotatedSpriteAtCentre) {
 TEST(Vu1Sprite3dGeom, Case2RotatedStripWithAdcPattern) {
     const Sprite3dParams p = CommonParams();
     Sprite3dRecord r = CommonRecord();
-    r.size = Vec4{8, 6, 1, 0};
+    r.size = Vec4{.x = 8, .y = 6, .z = 1, .w = 0};
 
     const oracle::Quad q = oracle::Expand(p, r, 1);
     EXPECT_EQ(q.vertex_count, 4);
@@ -179,7 +181,7 @@ TEST(Vu1Sprite3dGeom, Case3FogClampedAtFarValue) {
     Sprite3dParams p = CommonParams();
     p.fog.far_value = 0.8f;
     Sprite3dRecord r = CommonRecord();
-    r.pos = Vec4{0, 0, 0, 25};
+    r.pos = Vec4{.x = 0, .y = 0, .z = 0, .w = 25};
 
     const oracle::Quad q = oracle::Expand(p, r, 0);
     EXPECT_TRUE(q.drawn);
@@ -214,7 +216,7 @@ TEST(Vu1Sprite3dGeom, FarValueSubVectorSetsFogByte) {
 TEST(Vu1Sprite3dGeom, UpperBoundFogClampedAtNearValue) {
     const Sprite3dParams p = CommonParams();
     Sprite3dRecord r = CommonRecord();
-    r.pos = Vec4{0, 0, 0, 0.275f};
+    r.pos = Vec4{.x = 0, .y = 0, .z = 0, .w = 0.275f};
 
     const oracle::Quad q = oracle::Expand(p, r, 0);
     EXPECT_TRUE(q.drawn);
@@ -229,8 +231,8 @@ TEST(Vu1Sprite3dGeom, UpperBoundFogClampedAtNearValue) {
 TEST(Vu1Sprite3dGeom, CullMinXExactlyOneIsRejected) {
     const Sprite3dParams p = CommonParams();
     Sprite3dRecord r = CommonRecord();
-    r.pos = Vec4{-4093, 0, 0, 1};
-    r.size = Vec4{2, 6, 0, 0};
+    r.pos = Vec4{.x = -4093, .y = 0, .z = 0, .w = 1};
+    r.size = Vec4{.x = 2, .y = 6, .z = 0, .w = 0};
 
     const oracle::Quad q = oracle::Expand(p, r, 0);
     EXPECT_FALSE(q.drawn);
@@ -244,8 +246,8 @@ TEST(Vu1Sprite3dGeom, CullMinXExactlyOneIsRejected) {
 TEST(Vu1Sprite3dGeom, CullMaxXOnePastBoundIsRejected) {
     const Sprite3dParams p = CommonParams();
     Sprite3dRecord r = CommonRecord();
-    r.pos = Vec4{104, 0, 0, 1};
-    r.size = Vec4{7984, 6, 0, 0};
+    r.pos = Vec4{.x = 104, .y = 0, .z = 0, .w = 1};
+    r.size = Vec4{.x = 7984, .y = 6, .z = 0, .w = 0};
 
     const oracle::Quad q = oracle::Expand(p, r, 0);
     EXPECT_FALSE(q.drawn);
@@ -263,7 +265,7 @@ TEST(Vu1Sprite3dGeom, CullWindowIsStrictOnBothSides) {
     const float pw[] = {200.0f, 300.0f, 1.0f, 0.5f};
     for (int i = 0; i < 4; ++i) {
         Sprite3dRecord r = CommonRecord();
-        r.pos = Vec4{0, 0, 0, pos_w[i]};
+        r.pos = Vec4{.x = 0, .y = 0, .z = 0, .w = pos_w[i]};
         ASSERT_FLOAT_EQ(Mul(p.ls, r.pos).w, pw[i]);
         const oracle::Quad q = oracle::Expand(p, r, 0);
         EXPECT_FALSE(q.drawn) << "Pw = " << pw[i];
@@ -279,8 +281,8 @@ TEST(Vu1Sprite3dGeom, CullWindowIsStrictOnBothSides) {
 TEST(Vu1Sprite3dGeom, ZeroPwIsRejectedWithoutNan) {
     const Sprite3dParams p = CommonParams();
     Sprite3dRecord r = CommonRecord();
-    r.pos = Vec4{0, 0, 0, 0};
-    r.size = Vec4{0, 0, 0, 0};
+    r.pos = Vec4{.x = 0, .y = 0, .z = 0, .w = 0};
+    r.size = Vec4{.x = 0, .y = 0, .z = 0, .w = 0};
 
     const oracle::Quad q = oracle::Expand(p, r, 0);
     EXPECT_FALSE(q.drawn);
@@ -297,8 +299,8 @@ TEST(Vu1Sprite3dGeom, ZeroPwIsRejectedWithoutNan) {
 TEST(Vu1Sprite3dGeom, RejectedRotatedSpriteSetsAdcOnAllVertices) {
     const Sprite3dParams p = CommonParams();
     Sprite3dRecord r = CommonRecord();
-    r.pos = Vec4{-4093, 0, 0, 1};
-    r.size = Vec4{2, 6, 0, 1};
+    r.pos = Vec4{.x = -4093, .y = 0, .z = 0, .w = 1};
+    r.size = Vec4{.x = 2, .y = 6, .z = 0, .w = 1};
 
     const oracle::Quad q = oracle::Expand(p, r, 1);
     EXPECT_EQ(q.vertex_count, 4);
@@ -315,7 +317,7 @@ TEST(Vu1Sprite3dGeom, RejectedRotatedSpriteSetsAdcOnAllVertices) {
 TEST(Vu1Sprite3dGeom, ModesOtherThanZeroUseTheStripPath) {
     const Sprite3dParams p = CommonParams();
     Sprite3dRecord r = CommonRecord();
-    r.size = Vec4{8, 6, 1, 0};
+    r.size = Vec4{.x = 8, .y = 6, .z = 1, .w = 0};
 
     const oracle::Quad q1 = oracle::Expand(p, r, 1);
     const oracle::Quad q2 = oracle::Expand(p, r, 2);
@@ -344,7 +346,7 @@ TEST(Vu1Sprite3dGeom, ModesOtherThanZeroUseTheStripPath) {
 TEST(Vu1Sprite3dGeom, ColourSaturatesTo16BitsBeforeLowByte) {
     const Sprite3dParams p = CommonParams();
     Sprite3dRecord r = CommonRecord();
-    r.colour = Vec4{300, 40000, -1, 255};
+    r.colour = Vec4{.x = 300, .y = 40000, .z = -1, .w = 255};
 
     const oracle::Quad q = oracle::Expand(p, r, 0);
     EXPECT_EQ(q.rgba[0], 300 & 0xFF);

@@ -3,8 +3,7 @@
 #include <editctrl.hpp>
 void mgPortCutCameraInterpolation();
 
-// Give the native caller access to the retail eye state and static control
-// helpers, using the same linkage seam as the main-loop port stubs.
+// Retail eye state and static control helpers, exposed to the native caller.
 extern int                 FixCameraFlag asm("EditCtrl_FixedCamera");
 extern int                 LadderMode asm("EditCtrl_LadderMode");
 extern EditViewMode        ViewMode asm("EditCtrl_ViewMode");
@@ -26,7 +25,7 @@ void PortEditLadderControl(CScene *scene, CPadControl *pad) { LadderControl(scen
 
 void PortEditCharaControl(CScene *scene, CPadControl *pad) { CharaControl(scene, pad); }
 
-// Only proven recurring updates resolve their pose without a display cut.
+// The camera whose per-frame eye update resolves its pose without a display cut.
 mgCCamera *PortContinuousEyeCamera = nullptr;
 
 void PortEditCameraControl(CScene *scene, CPadControl *pad) {

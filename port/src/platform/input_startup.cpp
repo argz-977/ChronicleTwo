@@ -3,12 +3,16 @@
 #include "platform/input.hpp"
 #include "platform/settings.hpp"
 
-void InputInitForRun(bool headless) {
-    if (headless) {
-        // InputPoll and script overrides work without physical devices or window event hooks.
-        // Apply the same bindings and mouse settings without opening SDL's gamepad subsystem.
-        InputApplyConfig(SettingsGet());
-    } else {
+void InputApplyGameConfig(const HostSettings &settings) {
+    auto input_settings = settings;
+    input_settings.stick_invert_x = !settings.stick_invert_x;
+    input_settings.stick_invert_y = !settings.stick_invert_y;
+    InputApplyConfig(input_settings);
+}
+
+void InputInitForRun(bool devices_closed) {
+    if (!devices_closed) {
         InputInit();
     }
+    InputApplyGameConfig(SettingsGet());
 }

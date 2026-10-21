@@ -65,6 +65,7 @@ void SetFogParam(float (&fog)[4], float near_dist, float far_dist, float far_val
 struct Prog0Draw {
     gfx::MeshConstants mesh;
     gfx::Prog0Constants prog0;
+    gfx::Prog0Palette   palette;
 };
 
 Prog0Draw Prog0(uint32_t flags) {
@@ -87,7 +88,7 @@ void SetDirectional(gfx::Prog0Constants &p, uint32_t light, const std::array<flo
 }
 
 // Rows 0-2 of the bone's 4x4, row-major.
-void SetBone(gfx::Prog0Constants &p, uint32_t slot, const std::array<float, 12> &rows) {
+void SetBone(gfx::Prog0Palette &p, uint32_t slot, const std::array<float, 12> &rows) {
     for (uint32_t r = 0; r < 3; r++) {
         for (uint32_t c = 0; c < 4; c++) {
             p.bones[slot][r][c] = rows[r * 4 + c];
@@ -96,7 +97,12 @@ void SetBone(gfx::Prog0Constants &p, uint32_t slot, const std::array<float, 12> 
 }
 
 gfx::Vertex3D Vert(const std::array<float, 3> &position, const std::array<float, 3> &normal) {
-    return {{position[0], position[1], position[2]}, {normal[0], normal[1], normal[2]}, {0.0f, 0.0f}, {0, 0, 0, 0}};
+    return {
+        .position = {position[0], position[1], position[2]},
+          .normal = {normal[0], normal[1], normal[2]},
+          .uv = {0.0f, 0.0f},
+          .color = {0, 0, 0, 0}
+    };
 }
 
 std::vector<gfx::Vertex3D> Triangle(const Point &a, const Point &b, const Point &c, float z,
@@ -150,7 +156,9 @@ bool At(const GfxFixture &fixture, float ndc_x, float ndc_y, int r, int g, int b
 
 void Render(GfxFixture &fixture, const std::vector<gfx::Vertex3D> &vertices, const std::vector<uint32_t> &indices,
             const Prog0Draw &draw, const gfx::DrawState &state = {}) {
-    fixture.Frame(kClear, [&] { gfx::DrawMeshImmediateProg0(vertices, indices, draw.mesh, draw.prog0, {}, state); });
+    fixture.Frame(kClear, [&] {
+        gfx::DrawMeshImmediateProg0(vertices, indices, draw.mesh, draw.prog0, {}, state, nullptr, &draw.palette);
+    });
 }
 
 } // namespace
@@ -167,7 +175,7 @@ TEST(Vu1Prog0Shader, LightingOffVector) {
     // Alpha 128 is GS 1.0 here: Cs * As >> 7 keeps Cs.
     gfx::DrawState blend;
     blend.blend = true;
-    blend.alpha = gfx::GsBlend{0, 2, 0, 2};
+    blend.alpha = gfx::GsBlend{.a = 0, .b = 2, .c = 0, .d = 2};
     Render(fixture, ScreenVertices({0, 0, 1}), kTriangle, c, blend);
     EXPECT_TRUE(At(fixture, 0, 0, 64, 32, 16));
 }
@@ -266,15 +274,15 @@ TEST(Vu1Prog0Shader, VertexBlendVector) {
 
     Prog0Draw c = Prog0(gfx::kProg0Unlit | gfx::kProg0Skinned);
     Set(c.prog0.object_color, {200, 200, 200, 128});
-    SetBone(c.prog0, 0, kIdentityBone);
-    SetBone(c.prog0, 1, kTranslateXBone);
+    SetBone(c.palette, 0, kIdentityBone);
+    SetBone(c.palette, 1, kTranslateXBone);
     Render(fixture, skinned, kSquareIndices, c);
     EXPECT_TRUE(At(fixture, 0.5f, 0.0f, 200, 200, 200));
     EXPECT_TRUE(At(fixture, 0.0f, 0.0f, 0, 0, 0));
 
     Prog0Draw lit = Prog0(gfx::kProg0Skinned);
-    SetBone(lit.prog0, 0, kIdentityBone);
-    SetBone(lit.prog0, 1, kTranslateXBone);
+    SetBone(lit.palette, 0, kIdentityBone);
+    SetBone(lit.palette, 1, kTranslateXBone);
     SetDirectional(lit.prog0, 0, {0, 0, 1}, {100, 100, 100, 0});
     Render(fixture, skinned, kSquareIndices, lit);
     EXPECT_TRUE(At(fixture, 0.5f, 0.0f, 100, 100, 100));

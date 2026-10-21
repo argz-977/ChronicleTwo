@@ -11,7 +11,7 @@ $downloads = @(
     @('llvm', 'https://github.com/mstorsjo/llvm-mingw/releases/download/20260922/llvm-mingw-20260922-ucrt-x86_64.zip', 'E3AD77D117A4BEA19A7A3B333341824D79A5A371004A10E25B8504E7B3047666'),
     @('ninja', 'https://github.com/ninja-build/ninja/releases/download/v1.13.2/ninja-win.zip', '07FC8261B42B20E71D1720B39068C2E14FFCEE6396B76FB7A795FB460B78DC65'),
     @('sdl', 'https://github.com/libsdl-org/SDL/releases/download/release-3.4.18/SDL3-devel-3.4.18-mingw.zip', 'CD98158C8D025A816F430A600B4E9526524E6219EE884EC72BD498B80FD3BF58'),
-    @('ffmpeg', 'https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2025-03-31-12-55/ffmpeg-n7.1.1-5-g276bd388f3-win64-lgpl-shared-7.1.zip', 'A5B24188A1A7C3D4A7A1295BD597F35AD5EF7757796E6A8DB1CC1B922FF84E16'),
+    @('ffmpeg', 'https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-13-13-05/ffmpeg-n9.0.2-27-g7e93014c5b-win64-lgpl-shared-9.0.zip', '9DF4DB960F3F0CD3ED76BE0A2BE96265D00DB4C3BE2526A6D39B03C2B547100D'),
     @('glslang', 'https://github.com/KhronosGroup/glslang/releases/download/16.6.0/glslang-16.6.0-windows-x86_64-release.zip', '82BF434E69B9BB4829DE7E2B4BC2C5E7A7861E53D66CF75E5CC70F5F694A8D9B'),
     @('vulkan', 'https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/vulkan-sdk-1.4.363.0.zip', 'F4BE95220FF0EE0B1C620301FF4FE9AE48592D71F4C30F2D5C571351A153AE81')
 )
@@ -23,21 +23,30 @@ $downloads | ForEach-Object -Parallel {
     $archive = Join-Path $using:archives "$name.zip"
     $target = Join-Path $using:deps $name
     $timer = [Diagnostics.Stopwatch]::StartNew()
-    if (!(Test-Path $archive)) {
-        Write-Host "kazarov: downloading $name (log: $(Join-Path $using:archives "$name-download.log"))"
-        & curl.exe -fL --retry 3 -o $archive $url 2> (Join-Path $using:archives "$name-download.log")
-        if ($LASTEXITCODE) { throw "Download failed: $url" }
-    }
     Write-Host "kazarov: verifying $name"
-    $hash = Get-FileHash $archive -Algorithm SHA256
-    if ($hash.Hash -ne $expected) { throw "SHA-256 mismatch: $archive (expected $expected, got $($hash.Hash))" }
+    $hash = if (Test-Path -LiteralPath $archive) { Get-FileHash -LiteralPath $archive -Algorithm SHA256 }
+    if ($null -eq $hash -or $hash.Hash -ne $expected) {
+        if ($null -ne $hash) { Write-Host "kazarov: replacing stale or corrupt cached archive: $archive" }
+        Write-Host "kazarov: downloading $name (log: $(Join-Path $using:archives "$name-download.log"))"
+        $partial = "$archive.partial"
+        try {
+            & curl.exe -fL --retry 3 -o $partial $url 2> (Join-Path $using:archives "$name-download.log")
+            if ($LASTEXITCODE) { throw "Download failed: $url" }
+            $hash = Get-FileHash -LiteralPath $partial -Algorithm SHA256
+            if ($hash.Hash -ne $expected) { throw "SHA-256 mismatch: $archive (expected $expected, got $($hash.Hash))" }
+            Move-Item -LiteralPath $partial -Destination $archive -Force
+            $hash.Path = $archive
+        } finally {
+            if (Test-Path -LiteralPath $partial) { Remove-Item -LiteralPath $partial -Force }
+        }
+    }
     Write-Host "kazarov: extracting $name (log: $(Join-Path $using:archives "$name-extract.log"))"
     & $using:sevenZip x -y "-o$target" $archive > (Join-Path $using:archives "$name-extract.log")
     if ($LASTEXITCODE) { throw "Extract failed: $archive" }
     Write-Host ("kazarov: {0} ready in {1:N1}s" -f $name, $timer.Elapsed.TotalSeconds)
     $hash | Select-Object Path,Hash
 } -ThrottleLimit 4
-$ffmpegLicense = Join-Path $deps 'ffmpeg/ffmpeg-n7.1.1-5-g276bd388f3-win64-lgpl-shared-7.1/LICENSE.txt'
+$ffmpegLicense = Join-Path $deps 'ffmpeg/ffmpeg-n9.0.2-27-g7e93014c5b-win64-lgpl-shared-9.0/LICENSE.txt'
 if ((Get-Content -LiteralPath $ffmpegLicense -TotalCount 1).Trim() -ne 'GNU LESSER GENERAL PUBLIC LICENSE') {
     throw "FFmpeg archive is not the LGPL variant: $ffmpegLicense"
 }

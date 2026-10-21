@@ -56,7 +56,7 @@ public:
         }
     }
 
-    void Disable() {
+    static void Disable() {
         ASSERT_EQ(dc::test::SetEnv("DC2_AUDIO", "off", 1), 0);
         ASSERT_EQ(dc::test::SetEnv("DC2_AUDIO_WAV", "", 1), 0);
     }
@@ -69,7 +69,7 @@ public:
         ASSERT_EQ(dc::test::SetEnv("DC2_AUDIO_WAV", capture_, 1), 0);
     }
 
-    const fs::path &CapturePath() const { return capture_; }
+    [[nodiscard]] const fs::path &CapturePath() const { return capture_; }
 
 private:
     dc::test::EnvSnapshot audio_;
@@ -126,7 +126,7 @@ double Amplitude(const std::vector<float> &dry, double hz) {
 
 TEST(AudioInit, DisabledOutputStartsNothing) {
     AudioEnvironment env;
-    env.Disable();
+    AudioEnvironment::Disable();
     EXPECT_TRUE(AudioInit());
     EXPECT_FALSE(AudioOutputRunning());
     AudioShutdown();

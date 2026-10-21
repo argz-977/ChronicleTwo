@@ -3,17 +3,24 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <system_error>
 #include <vector>
 
 #include "audio/soundtrack.hpp"
+#include "audio_init.hpp"
+#include "crash/crash.hpp"
 #include "dataread.hpp"
+#include "dataread_port.hpp"
 #include "exitcodes.hpp"
 #include "gfx/gfx.hpp"
 #include "identity.hpp"
+#include "kazarov/data_version.hpp"
+#include "log/log.hpp"
 #include "mainloop.hpp"
+#include "mainloop_port.hpp"
 #include "mglib_port.hpp"
 #include "platform/clock.hpp"
 #include "platform/config.hpp"
@@ -26,15 +33,10 @@
 #include "platform/settings.hpp"
 #include "platform/window.hpp"
 #include "present.hpp"
+#include "profile.hpp"
 #include "sce/threads.hpp"
 #include "sound_port.hpp"
 #include "test_hooks.hpp"
-
-// The audio branch adds audio_init.hpp; until it lands the port builds without audio.
-#if __has_include("audio_init.hpp")
-#include "audio_init.hpp"
-#define CT_HAVE_AUDIO_INIT 1
-#endif
 
 int VSyncCallBack(int field);
 
@@ -46,7 +48,11 @@ constexpr float kLogicalHeight = 480.0f;
 struct Options {
     const char           *jump = nullptr;
     const char           *give = nullptr;
+    const char           *log_level = nullptr;
     bool                  fast_load = false;
+    bool                  skip_events = false;
+    bool                  invincible = false;
+    const char           *seed = nullptr;
     bool                  headless = false;
     bool                  offscreen = false;
     int                   frames = 0;
@@ -59,35 +65,16 @@ struct Options {
     bool                  screenshot_fps = false;
     std::filesystem::path screenshot;
     std::filesystem::path input;
+    const char           *crash_test = nullptr; // hidden: --crash-test MODE[:early] (DC2_CRASH_TEST)
 };
 
 Options g_options;
 
 [[noreturn]] void Usage(const char *program) {
-    std::fprintf(stderr,
-                 "usage: %s [--data DIR] [--run-dir DIR] [--save DIR] [--window WxH] [--headless] [--offscreen]\n"
-                 "          [--frames N] [--screenshot PATH] [--input SCRIPT] [--display-per-tick N]\n"
-                 "          [--show-fps] [--log-fps] [--screenshot-display N] [--screenshot-fps]\n"
-                 "  --jump MODE[:ARG]  start in town:<map>, dungeon:<n>[:<floor>], event:<id>, title, opening, menu (DC2_JUMP)\n"
-                 "  --fast-load        shorten loading-screen holds (DC2_FAST_LOAD=1)\n"
-                 "  --give ITEM,...    give missing items and weapons on arrival (DC2_GIVE)\n"
-                 "  --run-dir DIR      game root containing data/, port_data/ and saves/\n"
-                 "                     (default: the per-user chronicletwo app data directory)\n"
-                 "  --data DIR         override the extracted data/ subdirectory (DC2_DATA)\n"
-                 "  --save DIR         override the saves/ subdirectory (DC2_SAVE)\n"
-                 "  --headless         render offscreen (SDL offscreen driver, VK_EXT_headless_surface)\n"
-                 "  --offscreen        --headless without a Vulkan surface: render to an image only\n"
-                 "  --frames N         exit after frame N of the game's main loop (N a positive integer)\n"
-                 "  --screenshot PATH  with --frames: write the last frame to PATH as a PNG on exit\n"
-                 "  --screenshot-display N  with --screenshot: also write N interpolated display frames of that frame\n"
-                 "                     beside PATH, as PATH-display-K.png for K = 0..N-1\n"
-                 "  --screenshot-fps   with --screenshot: draw the FPS counter into the written image\n"
-                 "  --input SCRIPT     drive the pads named in SCRIPT from an input script\n"
-                 "  --window WxH       window size in pixels (default: config.json, then the monitor's)\n"
-                 "  --display-per-tick N  headless: also render N interpolated display frames per tick (discarded)\n"
-                 "  --show-fps         draw the FPS counter on presented frames, headless too\n"
-                 "  --log-fps          print the FPS counter's text on stderr every second\n",
+    CT_LOG_ERROR(Main,
+                 "usage: {} [--data DIR] [--run-dir DIR] [--save DIR] [--window WxH] [--headless] [--offscreen]\n          [--frames N] [--screenshot PATH] [--input SCRIPT] [--display-per-tick N]\n          [--show-fps] [--log-fps] [--screenshot-display N] [--screenshot-fps]\n          [--log-level SPEC]\n  --jump MODE[:ARG]  start in town:<map>, georama:<0-4>, dungeon:<n>[:<floor>], event:<id>, title, opening, menu (DC2_JUMP)\n  --fast-load        shorten loading-screen holds (DC2_FAST_LOAD=1)\n  --give ITEM,...    give missing items and weapons on arrival (DC2_GIVE)\n  --skip-events      enter a jumped dungeon floor directly; skip skippable dungeon scenes (DC2_SKIP_EVENTS=1)\n  --invincible       the dungeon character takes no hits (DC2_INVINCIBLE=1)\n  --seed N           reseed the random generator with N as each dungeon floor is built (DC2_SEED)\n  --run-dir DIR      game root containing data.zip and saves/\n                     (default: the per-user chronicletwo app data directory)\n  --data DIR         override the extracted data/ subdirectory (DC2_DATA)\n  --save DIR         override the saves/ subdirectory (DC2_SAVE)\n  --headless         render offscreen (SDL offscreen driver, VK_EXT_headless_surface)\n  --offscreen        --headless without a Vulkan surface: render to an image only\n  --frames N         exit after frame N of the game's main loop (N a positive integer)\n  --screenshot PATH  with --frames: write the last frame to PATH as a PNG on exit\n  --screenshot-display N  with --screenshot: also write N interpolated display frames of that frame\n                     beside PATH, as PATH-display-K.png for K = 0..N-1\n  --screenshot-fps   with --screenshot: draw the FPS counter and menu pointer into the written image\n  --input SCRIPT     drive the pads from an input script; live input is ignored\n  --window WxH       window size in pixels (default: config.json, then the monitor's)\n  --display-per-tick N  headless: also render N interpolated display frames per tick (discarded)\n  --show-fps         draw the FPS counter on presented frames, headless too\n  --log-fps          print the FPS counter's text on stderr every second\n  --log-level SPEC   trace, debug, info, warning, error, critical or off, and/or CATEGORY=LEVEL,\n                     comma-separated (DC2_LOG; default: config.json's log.level)",
                  program);
+    LogFlush();
     std::exit(kExitUsage);
 }
 
@@ -96,6 +83,16 @@ const char *OptionValue(int argc, const char **argv, int &i) {
         Usage(argv[0]);
     }
     return argv[++i];
+}
+
+std::uint32_t ParseSeed(std::string_view text, const char *program) {
+    std::uint32_t value = 0;
+    const char   *last = text.data() + text.size();
+    const auto [end, ec] = std::from_chars(text.data(), last, value);
+    if (ec != std::errc() || end != last) {
+        Usage(program);
+    }
+    return value;
 }
 
 int ParsePositive(std::string_view text, const char *program) {
@@ -128,8 +125,19 @@ Options ParseOptions(int argc, const char **argv) {
             options.jump = OptionValue(argc, argv, i);
         } else if (arg == "--give") {
             options.give = OptionValue(argc, argv, i);
+        } else if (arg == "--log-level") {
+            options.log_level = OptionValue(argc, argv, i);
+            if (!LogSpecValid(options.log_level)) {
+                Usage(argv[0]);
+            }
         } else if (arg == "--fast-load") {
             options.fast_load = true;
+        } else if (arg == "--skip-events") {
+            options.skip_events = true;
+        } else if (arg == "--invincible") {
+            options.invincible = true;
+        } else if (arg == "--seed") {
+            options.seed = OptionValue(argc, argv, i);
         } else if (arg == "--headless") {
             options.headless = true;
         } else if (arg == "--offscreen") {
@@ -154,6 +162,8 @@ Options ParseOptions(int argc, const char **argv) {
             options.screenshot_display = ParsePositive(OptionValue(argc, argv, i), argv[0]);
         } else if (arg == "--screenshot-fps") {
             options.screenshot_fps = true;
+        } else if (arg == "--crash-test") {
+            options.crash_test = OptionValue(argc, argv, i);
         } else if (arg == "--input") {
             options.input = PathsFromUtf8(OptionValue(argc, argv, i));
             if (options.input.empty()) {
@@ -173,15 +183,15 @@ Options ParseOptions(int argc, const char **argv) {
 }
 
 void ReportPipelineProgress(std::uint32_t done, std::uint32_t total) {
-    static std::uint32_t    reported = 0;
+    static std::uint32_t reported = 0;
     constexpr std::uint32_t kSteps = 4;
     if (total == 0) {
         return;
     }
-    std::uint32_t step = done * kSteps / total;
+    const std::uint32_t step = done * kSteps / total;
     if (done == 0 || step > reported) {
         reported = step;
-        std::fprintf(stderr, "compiling shaders %u/%u\n", done, total);
+        CT_LOG_INFO(Gfx, "compiling shaders {}/{}", done, total);
     }
 }
 
@@ -196,8 +206,19 @@ gfx::PresentMode PresentMode(ConfigPresentMode mode) {
     }
 }
 
+gfx::RenderThreadMode RenderThread(ConfigRenderThread mode) {
+    switch (mode) {
+        case ConfigRenderThread::Lockstep:
+            return gfx::RenderThreadMode::Lockstep;
+        case ConfigRenderThread::Async:
+            return gfx::RenderThreadMode::Async;
+        default:
+            return gfx::RenderThreadMode::Off;
+    }
+}
+
 gfx::FrameLayout Layout(const Config &config) {
-    return {config.aspect == ConfigAspect::Auto ? gfx::AspectMode::Fill : gfx::AspectMode::Letterbox, config.ui_scale};
+    return {.aspect = config.aspect == ConfigAspect::Auto ? gfx::AspectMode::Fill : gfx::AspectMode::Letterbox, .ui_scale = config.ui_scale};
 }
 
 PresentSettings PresentSettingsFor(const Config &config, const Options &options) {
@@ -222,22 +243,17 @@ void PumpHost() {
 
     // SetFrameLayout recreates frame targets; it must not run inside a tick's recording.
     if (!gfx::InFrame()) {
-        const gfx::FrameLayout layout = Layout(ConfigGet());
-        const gfx::FrameLayout current = gfx::CurrentFrameLayout();
-        if (layout.aspect != current.aspect || layout.ui_scale != current.ui_scale) {
-            gfx::SetFrameLayout(layout);
-        }
+        mgPortSetFrameLayout(Layout(ConfigGet()));
     }
 }
 
 void ApplyConfigChange(const HostSettings &before, const HostSettings &after) {
-    if (before.tick_rate != after.tick_rate) {
-        ClockSetTickRate(after.tick_rate);
-    }
+    CT_PROFILE_REFRESH();
+    LogApplyConfig(ConfigGet().log);
     if (before.present_mode != after.present_mode) {
         gfx::SetPresentMode(PresentMode(after.present_mode));
     }
-    InputApplyConfig(after);
+    InputApplyGameConfig(after);
     SoundApplySettings();
     if (before.soundtrack != after.soundtrack) {
         audio::SoundtrackReload();
@@ -247,29 +263,104 @@ void ApplyConfigChange(const HostSettings &before, const HostSettings &after) {
     PresentSetSettings(PresentSettingsFor(ConfigGet(), g_options));
 }
 
+// The user's home as "~", so a shared log does not carry the account name.
+std::string Redacted(const std::filesystem::path &path) {
+    std::string text = PathsDisplay(path);
+#ifdef _WIN32
+    const wchar_t *home = _wgetenv(L"USERPROFILE");
+#else
+    const char *home = std::getenv("HOME");
+#endif
+    if (home == nullptr || *home == 0) {
+        return text;
+    }
+    const std::string prefix = PathsDisplay(std::filesystem::path(home));
+    if (!prefix.empty() && text.starts_with(prefix) &&
+        (text.size() == prefix.size() || text[prefix.size()] == std::filesystem::path::preferred_separator)) {
+        text.replace(0, prefix.size(), "~");
+    }
+    return text;
+}
+
+void LogSessionHeader() {
+#ifdef CT_GIT_DESCRIBE
+    constexpr std::string_view commit = CT_GIT_DESCRIBE;
+#else
+    constexpr std::string_view commit = "unknown";
+#endif
+#ifdef NDEBUG
+    constexpr std::string_view build = "release";
+#else
+    constexpr std::string_view build = "debug";
+#endif
+#ifdef _WIN32
+    constexpr std::string_view os = "Windows";
+#elifdef __APPLE__
+    constexpr std::string_view os = "macOS";
+#else
+    constexpr std::string_view os = "Linux";
+#endif
+    CT_LOG_FILE_INFO("session {}: Dark Chronicle {} ({} build, {}), data version {}", LogSessionId(), commit, build,
+                     os, KAZAROV_DATA_VERSION);
+    CT_LOG_FILE_INFO("session: data {}, saves {}", Redacted(PathsDataRoot()), Redacted(PathsSaveRoot()));
+}
+
 int Run(int argc, const char **argv) {
     GameSetIdentity();
     argc = PathsConsumeArgs(argc, argv);
     g_options = ParseOptions(argc, argv);
     const Options &options = g_options;
-    const char    *jump = options.jump ? options.jump : SettingsEnv("JUMP");
-    const char    *give = options.give ? options.give : SettingsEnv("GIVE");
+    LogInit({.headless = options.headless, .level_override = options.log_level ? options.log_level : SettingsEnv("LOG")});
+    // Registered before AudioShutdown's, so it runs after it and writes the exit's last lines.
+    std::atexit(LogShutdown);
+    LogSessionHeader();
+
+    CrashInit({.headless = options.headless || options.frames > 0 || !options.input.empty()});
+    const char              *crash_test_text = options.crash_test ? options.crash_test : SettingsEnv("CRASH_TEST");
+    std::optional<CrashTest> crash_test;
+    if (crash_test_text && *crash_test_text && !(crash_test = CrashTestParse(crash_test_text))) {
+        Usage(argv[0]);
+    }
+    const char *jump = options.jump ? options.jump : SettingsEnv("JUMP");
+    const char *give = options.give ? options.give : SettingsEnv("GIVE");
     if ((jump && (options.jump || *jump) && !GameSetJump(jump)) ||
         (give && (options.give || *give) && !GameSetGive(give))) {
         Usage(argv[0]);
     }
+    PortAutosave = !options.headless && !GameHasJump() && options.input.empty();
     const char *fast = SettingsEnv("FAST_LOAD");
     GameSetFastLoad(options.fast_load || (fast && *fast && *fast != '0'));
-    InputScript   input_script;
+    const char *skip_events = SettingsEnv("SKIP_EVENTS");
+    GameSetSkipEvents(options.skip_events || (skip_events && *skip_events && *skip_events != '0'));
+    const char *invincible = SettingsEnv("INVINCIBLE");
+    GameSetInvincible(options.invincible || (invincible && *invincible && *invincible != '0'));
+    const char *seed = options.seed ? options.seed : SettingsEnv("SEED");
+    if (seed && (options.seed || *seed)) {
+        GameSetSeed(ParseSeed(seed, argv[0]));
+    }
+    InputScript input_script;
     if (!options.input.empty()) {
         std::string error;
         if (!InputScriptLoad(options.input, input_script, error)) {
-            std::fprintf(stderr, "bad input script: %s\n", error.c_str());
+            CT_LOG_ERROR(Main, "bad input script: {}", error);
             std::exit(kExitUsage);
         }
     }
     ConfigLoad();
+    CT_PROFILE_REFRESH();
+    LogAttachFile(PathsSaveRoot(), ConfigGet().log);
+    CrashSetBundleRoot(PathsSaveRoot());
+    if (crash_test) {
+        CrashTestArm(*crash_test, CrashTestWhen::Early);
+    }
     FirstRunRequireData(PathsDataRoot(), options.headless);
+    InitCDFile();
+    if (!options.headless) {
+        GameSetDataIcon();
+    }
+    if (!DataReadPrepareScriptTiming(options.headless)) {
+        return kExitScriptTiming;
+    }
     const HostSettings &settings = SettingsGet();
     const bool          offscreen = options.offscreen || (options.headless && !gfx::HeadlessSurfaceAvailable());
 
@@ -277,7 +368,11 @@ int Run(int argc, const char **argv) {
     WindowConfig window = DisplayWindowConfig(settings);
     window.vulkan = !offscreen;
     WindowInit(window);
-    InputInitForRun(options.headless);
+    if (!options.headless) {
+        CrashShowLastReportNotice();
+    }
+    // A scripted run takes no live input: no devices open, no window input events and no mouse capture.
+    InputInitForRun(options.headless || !options.input.empty());
     InputScriptInstall(std::move(input_script));
 
     gfx::RendererConfig renderer;
@@ -292,16 +387,24 @@ int Run(int argc, const char **argv) {
     renderer.layout = Layout(ConfigGet());
     renderer.prog0_meshes = true;
     renderer.validation = renderer.validation || SettingsEnv("VULKAN_VALIDATION") != nullptr;
+    renderer.render_thread = RenderThread(ConfigGet().render_thread);
+    if (const char *setting = SettingsEnv("RENDER_THREAD")) {
+        if (auto mode = gfx::ParseRenderThreadMode(setting)) {
+            renderer.render_thread = *mode;
+        }
+    }
+    // Headless and screenshot runs stay deterministic: no render thread.
+    if (options.headless || !options.screenshot.empty()) {
+        renderer.render_thread = gfx::RenderThreadMode::Off;
+    }
     gfx::RendererInit(WindowHandle(), renderer);
     PresentSetSettings(PresentSettingsFor(ConfigGet(), g_options));
-#ifdef CT_HAVE_AUDIO_INIT
     AudioInit(options.headless);
     // --frames leaves through std::exit from mgEndFrame: the output must stop before the mixer's statics are destroyed
     // under the audio thread.
     std::atexit(AudioShutdown);
-#endif
 
-    ClockSetTickRate(settings.tick_rate);
+    ClockSetTickRate(kConfigTickRateDefault);
     ClockSetUnbounded(options.headless);
     ClockAddPumpHook(PumpHost);
     ClockSetTickCallback(VSyncCallBack);
@@ -309,21 +412,25 @@ int Run(int argc, const char **argv) {
 
     MainThreadPriority = 10;
     KzThreadsSetMainPriority(MainThreadPriority);
-    InitCDFile();
     if (options.frames > 0) {
         mgPortSetScreenshotOptions({.display_frames = options.screenshot_display, .fps = options.screenshot_fps});
         mgPortExitAfterFrames(options.frames, options.screenshot);
     }
+    if (crash_test) {
+        CrashTestArm(*crash_test, CrashTestWhen::FirstFrame);
+    }
+    CT_PROFILE_THREAD("Game / host");
     MainLoop();
 
     ClockRemovePumpHook(PumpHost);
     ConfigSetChangeHook(nullptr);
     InputShutdown();
-#ifdef CT_HAVE_AUDIO_INIT
     AudioShutdown();
-#endif
+    gfx::SetRenderIdleHook(nullptr, nullptr);
     gfx::RendererShutdown();
     WindowShutdown();
+    CT_LOG_FILE_INFO("main: exit {}", static_cast<int>(kExitOk));
+    LogShutdown();
     return kExitOk;
 }
 
@@ -342,9 +449,11 @@ PORT_OVERRIDE int main(int argc, const char **argv) {
 int wmain(int argc, wchar_t **wide_argv) {
     std::vector<std::string>  args;
     std::vector<const char *> argv;
+    args.reserve(argc);
     for (int i = 0; i < argc; ++i) {
         args.push_back(PathsDisplay(std::filesystem::path(wide_argv[i])));
     }
+    argv.reserve(args.size());
     for (const std::string &arg : args) {
         argv.push_back(arg.c_str());
     }

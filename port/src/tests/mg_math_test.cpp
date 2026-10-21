@@ -89,8 +89,8 @@ TEST(MgMath, CreateBox8DegenerateBoxHasOneCorner) {
     float p[4] = {2.0f, -3.0f, 4.0f, 1.0f};
     float corners[8][4];
     mgCreateBox8(corners, p, p);
-    for (int c = 0; c < 8; c++) {
-        expect_lanes(corners[c], {2, -3, 4, 1});
+    for (auto &corner : corners) {
+        expect_lanes(corner, {2, -3, 4, 1});
     }
 }
 
@@ -100,8 +100,8 @@ TEST(MgMath, ZeroVectorAcceptsFloatAlignedMembersAndPreservesNeighbors) {
         float vector[4];
         float after;
     } storage{
-        17.0f, {1.0f, -2.0f, 3.0f, -4.0f},
-         23.0f
+        .before = 17.0f, .vector = {1.0f, -2.0f, 3.0f, -4.0f},
+             .after = 23.0f
     };
 
     mgZeroVector(storage.vector);
@@ -307,8 +307,8 @@ TEST(MgMath, VectorMaxMinInPlaceOutputOverlappingInput) {
 }
 
 TEST(MgMath, BoxMaxMinGrowsToEnclosePatch) {
-    mgVu0FBOX box;
-    mgVu0FBOX other;
+    mgVu0FBOX box{};
+    mgVu0FBOX other{};
     float bmax[4] = {1.0f, 1.0f, 1.0f, 1.0f};
     float bmin[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     float omax[4] = {3.0f, -1.0f, 2.0f, 0.0f};

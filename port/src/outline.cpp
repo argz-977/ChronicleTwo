@@ -22,7 +22,7 @@ gfx::LogicalRect LogicalRectOf(const OutlineBox &box, int outset) {
     const float top = static_cast<float>(box.top - outset) / kUnitsPerPixel;
     const float right = static_cast<float>(box.right + outset) / kUnitsPerPixel;
     const float bottom = static_cast<float>(box.bottom + outset) / kUnitsPerPixel;
-    return {left, top, right - left, bottom - top};
+    return {.x = left, .y = top, .w = right - left, .h = bottom - top};
 }
 
 // Texels are at the box's own logical coordinates: the image is the frame's logical space.
@@ -52,9 +52,8 @@ void DrawCopy(const OutlineBox &box, int dx, int dy, const uint8_t (&colour)[4],
     // same texels.
     const gfx::Vertex2D quad[4] = {corner(x0, y0, u0, v0), corner(x1, y0, u1, v0),
                                    corner(x1, y1, u1, v1), corner(x0, y1, u0, v1)};
-    // The model image is redrawn with the presentation camera, so the newest tick's box
-    // cannot crop it. Sample the visible extent; the matching display clear removes other
-    // objects from this shared target. Texture and screen coordinates retain the edge offset.
+    // Display frames redraw the image with the presentation camera, so the tick's box must not crop
+    // them: they sample the whole visible extent, which the matching display clear keeps to this object.
     const mgPortExtent  extent = mgPortVisibleExtent();
     const float         ox = static_cast<float>(dx) / kUnitsPerPixel;
     const float         oy = static_cast<float>(dy) / kUnitsPerPixel;
@@ -63,7 +62,7 @@ void DrawCopy(const OutlineBox &box, int dx, int dy, const uint8_t (&colour)[4],
         corner(extent.right + ox, extent.top + oy, extent.right, extent.top),
         corner(extent.right + ox, extent.bottom + oy, extent.right, extent.bottom),
         corner(extent.left + ox, extent.bottom + oy, extent.left, extent.bottom)};
-    gfx::Presentation2D presentation{display_quad, state};
+    gfx::Presentation2D presentation{.vertices = display_quad, .state = state};
     // Empty texels must not stamp the object's constant depth across the enlarged rectangle.
     if (presentation.state.depth_write) {
         presentation.state.alpha_test = true;
@@ -91,13 +90,9 @@ OutlineBox OutlineDrawBox(const float *box_min, const float *box_max, const mgPo
     float min_xy[4] = {box_min[0], box_min[1], 0.0f, 0.0f};
     float max_xy[4] = {box_max[0], box_max[1], 0.0f, 0.0f};
 
-    if (min_xy[0] < extent.left) {
-        min_xy[0] = extent.left;
-    }
+    min_xy[0] = std::max(min_xy[0], extent.left);
 
-    if (min_xy[1] < extent.top) {
-        min_xy[1] = extent.top;
-    }
+    min_xy[1] = std::max(min_xy[1], extent.top);
 
     if (!(max_xy[0] <= extent.right)) {
         max_xy[0] = extent.right;
@@ -111,7 +106,7 @@ OutlineBox OutlineDrawBox(const float *box_min, const float *box_max, const mgPo
     int max_corner[4];
     mgFotI4(min_corner, min_xy);
     mgFotI4(max_corner, max_xy);
-    return {min_corner[0], min_corner[1], max_corner[0], max_corner[1]};
+    return {.left = min_corner[0], .top = min_corner[1], .right = max_corner[0], .bottom = max_corner[1]};
 }
 
 OutlineBox OutlinePaddedBox(const OutlineBox &box, const mgPortExtent &extent) {
@@ -122,42 +117,24 @@ OutlineBox OutlinePaddedBox(const OutlineBox &box, const mgPortExtent &extent) {
     mgFotI4(min_bound, bounds_min);
     mgFotI4(max_bound, bounds_max);
 
-    OutlineBox padded{box.left - kOutlinePad, box.top - kOutlinePad, box.right + kOutlinePad,
-                      box.bottom + kOutlinePad};
+    OutlineBox padded{.left = box.left - kOutlinePad, .top = box.top - kOutlinePad, .right = box.right + kOutlinePad, .bottom = box.bottom + kOutlinePad};
 
-    if (padded.left < min_bound[0]) {
-        padded.left = min_bound[0];
-    }
+    padded.left = std::max(padded.left, min_bound[0]);
 
-    if (padded.top < min_bound[1]) {
-        padded.top = min_bound[1];
-    }
+    padded.top = std::max(padded.top, min_bound[1]);
 
-    if (padded.right > max_bound[0]) {
-        padded.right = max_bound[0];
-    }
+    padded.right = std::min(padded.right, max_bound[0]);
 
-    if (padded.bottom > max_bound[1]) {
-        padded.bottom = max_bound[1];
-    }
+    padded.bottom = std::min(padded.bottom, max_bound[1]);
 
     return padded;
 }
 
 PORT_OVERRIDE int COutLineDraw::Draw(float scale, float alpha) {
-    if (frame == NULL) {
+    if (frame == nullptr || texture == nullptr || enable == 0) {
         return 0;
     }
 
-    if (texture == NULL) {
-        return 0;
-    }
-
-    if (enable == 0) {
-        return 0;
-    }
-
-    int result = 0;
     scale = OutlineScale(scale);
 
     if (width <= 0.0f) {
@@ -166,18 +143,16 @@ PORT_OVERRIDE int COutLineDraw::Draw(float scale, float alpha) {
     }
 
     const float scaled_width = width * scale;
-    float opacity = 1.0f;
+    float       opacity = 1.0f;
 
     if (static_cast<int>(scaled_width) <= 0) {
         opacity = scaled_width;
     }
 
-    if (opacity < 0.01f) {
-        opacity = 0.01f;
-    }
+    opacity = std::max(opacity, 0.01f);
 
     const int edge_offset = OutlineEdgeOffset(width, scale);
-    mgVu0FBOX draw_box;
+    mgVu0FBOX draw_box{};
 
     if (mgGetDrawRect(frame, &draw_box) == 0) {
         return 0;
@@ -206,10 +181,9 @@ PORT_OVERRIDE int COutLineDraw::Draw(float scale, float alpha) {
 
     gfx::SetRenderTarget(outline);
     // Depth is not cleared: the image shares the scene's depth buffer.
-    const gfx::LogicalRect display_clear = {extent.left, extent.top, extent.right - extent.left,
-                                            extent.bottom - extent.top};
+    const gfx::LogicalRect display_clear = {.x = extent.left, .y = extent.top, .w = extent.right - extent.left, .h = extent.bottom - extent.top};
     gfx::Clear(true, clear_colour, false, 0.0f, &clear_rect, &display_clear);
-    result += mgDrawDirect(frame);
+    const int result = mgDrawDirect(frame);
     gfx::SetRenderTarget(previous);
 
     mgSetPkTextureRepeat(0);

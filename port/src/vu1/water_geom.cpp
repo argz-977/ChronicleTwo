@@ -5,11 +5,10 @@
 #include <utility>
 
 namespace dc::vu1 {
-
 namespace {
 
 // Retail's stencil writes out of bounds for tiny grids; out-of-range taps are dropped here.
-void ApplyEdgeWeights(std::vector<float>& weight, int rows, int columns) {
+void ApplyEdgeWeights(std::vector<float> &weight, int rows, int columns) {
     const auto set = [&](int r, int c, float value) {
         if (r >= 0 && r < rows && c >= 0 && c < columns) {
             weight[static_cast<std::size_t>(r * columns + c)] = value;
@@ -35,9 +34,19 @@ void ApplyEdgeWeights(std::vector<float>& weight, int rows, int columns) {
     }
 }
 
-}  // namespace
+uint8_t ToByte(float x) {
+    if (!(x > 0.0f)) {
+        return 0;
+    }
+    if (x >= 255.0f) {
+        return 255;
+    }
+    return static_cast<uint8_t>(x);
+}
 
-WaterMesh BuildWaterMesh(const WaterMeshDesc& desc, std::span<const float> height) {
+} // namespace
+
+WaterMesh BuildWaterMesh(const WaterMeshDesc &desc, std::span<const float> height) {
     const int rows = desc.rows;
     const int columns = desc.columns;
     const int count = rows * columns;
@@ -54,33 +63,32 @@ WaterMesh BuildWaterMesh(const WaterMeshDesc& desc, std::span<const float> heigh
         std::vector<WaterStripVertex> strip;
         strip.reserve(static_cast<std::size_t>(2 * columns));
 
-        // Retail steps columns by 27 but pointers by 26 (open point 9.7), so it drops columns for N >= 28.
-        // The PC emits every column.
+        // Retail steps columns by 27 but pointers by 26, dropping columns for N >= 28; every column is emitted.
         for (int c = 0; c < columns; ++c) {
             for (int r = 0; r < 2; ++r) {
-                const int i = row + r;
-                const std::size_t cell = static_cast<std::size_t>(i * columns + c);
+                const int         i = row + r;
+                const auto        cell = static_cast<std::size_t>(i * columns + c);
 
                 float slope_x = 0.0f;
                 if (i > 0) {
                     slope_x = height[cell - static_cast<std::size_t>(columns)] - height[cell];
                 }
 
-                // Open point 9.6: at the last column the retail read is h[i][c+1] past the row, which is
-                // h[i+1][0], and past the array for the last row. The PC uses 0 for the past-the-array case.
-                float slope_y = 0.0f;
+                // At the last column retail reads h[i][c+1], which is h[i+1][0], or past the array on the
+                // last row; that case uses 0.
+                float             slope_y = 0.0f;
                 const std::size_t next = cell + 1;
-                if (next < static_cast<std::size_t>(count)) {
+                if (std::cmp_less(next, count)) {
                     slope_y = height[cell] - height[next];
                 }
 
                 WaterStripVertex v{};
-                v.pos = {desc.min.x + static_cast<float>(i) * dx,
-                         desc.min.y,
-                         desc.min.z + static_cast<float>(c) * dz,
-                         1.0f};
-                // slope[2] is stale on retail; no output word depends on it (section 5.3).
-                v.slope = {slope_x, slope_y, 0.0f, weight[cell]};
+                v.pos = {.x = desc.min.x + static_cast<float>(i) * dx,
+                         .y = desc.min.y,
+                         .z = desc.min.z + static_cast<float>(c) * dz,
+                         .w = 1.0f};
+                // slope[2] is stale on retail; no output word depends on it.
+                v.slope = {.x = slope_x, .y = slope_y, .z = 0.0f, .w = weight[cell]};
                 strip.push_back(v);
             }
         }
@@ -89,33 +97,19 @@ WaterMesh BuildWaterMesh(const WaterMeshDesc& desc, std::span<const float> heigh
     return mesh;
 }
 
-namespace {
-
-uint8_t ToByte(float x) {
-    if (!(x > 0.0f)) {
-        return 0;
-    }
-    if (x >= 255.0f) {
-        return 255;
-    }
-    return static_cast<uint8_t>(x);
-}
-
-}  // namespace
-
-void WaterHostMesh(const WaterSurface& surface, const Mat4& model_to_eye, const WaterMesh& mesh,
-                   std::vector<WaterHostVertex>& vertices, std::vector<uint32_t>& indices) {
+void WaterHostMesh(const WaterSurface &surface, const Mat4 &model_to_eye, const WaterMesh &mesh,
+                   std::vector<WaterHostVertex> &vertices, std::vector<uint32_t> &indices) {
     constexpr float kFadeScale = 375.0f;
     constexpr float kFadeBias = -0.25f;
 
     vertices.clear();
     indices.clear();
 
-    for (const std::vector<WaterStripVertex>& strip : mesh) {
-        const uint32_t base = static_cast<uint32_t>(vertices.size());
+    for (const std::vector<WaterStripVertex> &strip : mesh) {
+        const auto base = static_cast<uint32_t>(vertices.size());
 
-        for (const WaterStripVertex& v : strip) {
-            const Vec4 object{v.pos.x, v.pos.y * surface.p0, v.pos.z, 1.0f};
+        for (const WaterStripVertex &v : strip) {
+            const Vec4 object{.x = v.pos.x, .y = v.pos.y * surface.p0, .z = v.pos.z, .w = 1.0f};
             // Retail's clip w is the eye depth (mgPortEyeToClip: w = z_eye), so q = 1 / w is 1 / eye_z.
             const float eye_z = Mul(model_to_eye, object).z;
             const float fade = eye_z > 0.0f ? std::clamp(kFadeScale / eye_z + kFadeBias, 0.0f, 1.0f) : 0.0f;
@@ -142,4 +136,4 @@ void WaterHostMesh(const WaterSurface& surface, const Mat4& model_to_eye, const 
     }
 }
 
-}  // namespace dc::vu1
+} // namespace dc::vu1

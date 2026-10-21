@@ -11,7 +11,7 @@ $rest = @($args | Select-Object -Skip 2)
 if ($command -notin 'build', 'run') { throw "kazarov: unknown command $command" }
 
 switch ($config.ToLower()) {
-    { $_ -in 'windows', 'windows-x64-release' } { $name = 'windows-x64-release'; $buildType = 'RelWithDebInfo' }
+    { $_ -in 'windows', 'windows-x64-release' } { $name = 'windows-x64-release'; $buildType = 'Release' }
     'windows-x64' { $name = 'windows-x64'; $buildType = 'Debug' }
     default { throw "kazarov: unknown Windows configuration $config" }
 }
@@ -66,7 +66,7 @@ $markers = @(
     'deps/ninja/ninja.exe',
     'deps/glslang/bin/glslang.exe',
     'deps/sdl/SDL3-3.4.18/x86_64-w64-mingw32/lib/cmake/SDL3',
-    'deps/ffmpeg/ffmpeg-n7.1.1-5-g276bd388f3-win64-lgpl-shared-7.1/bin/avcodec-61.dll',
+    'deps/ffmpeg/ffmpeg-n9.0.2-27-g7e93014c5b-win64-lgpl-shared-9.0/bin/avcodec-63.dll',
     'deps/vulkan/Vulkan-Headers-vulkan-sdk-1.4.363.0/include',
     'deps/vulkan-runtime/VulkanRT-X64-1.4.363.0-Components/x64/vulkan-1.dll',
     'deps/rust/1.99.0-gnullvm/bin/cxxbridge.exe'
@@ -88,7 +88,7 @@ function Read-CacheValue([string]$File, [string]$Key) {
 }
 $source = $checkout.Replace('\', '/')
 $buildPath = $build.Replace('\', '/')
-$ffmpegDir = "$($root.Replace('\', '/'))/deps/ffmpeg/ffmpeg-n7.1.1-5-g276bd388f3-win64-lgpl-shared-7.1"
+$ffmpegDir = "$($root.Replace('\', '/'))/deps/ffmpeg/ffmpeg-n9.0.2-27-g7e93014c5b-win64-lgpl-shared-9.0"
 $cache = Join-Path $build 'CMakeCache.txt'
 $cachedSource = Read-CacheValue $cache 'CMAKE_HOME_DIRECTORY'
 $cachedBuild = Read-CacheValue $cache 'CMAKE_CACHEFILE_DIR'
@@ -123,19 +123,26 @@ if ($command -eq 'build') {
 
 # A fast source-metadata/version check skips extraction for current data. The explicit
 # dc2data check command still performs a full output hash audit.
+# The retail image by name, else any disc image in rom/pal, else the PS2 build's extracted disc.
 $source = Join-Path $checkout 'rom/pal/Dark Chronicle (PAL).iso'
 if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+    $source = Get-ChildItem -LiteralPath (Join-Path $checkout 'rom/pal') -Filter '*.iso' -File -ErrorAction Ignore |
+        Sort-Object Name | Select-Object -First 1 -ExpandProperty FullName
+}
+if (-not $source) {
     $source = Join-Path $checkout 'rom/pal/extracted/iso'
     if (-not (Test-Path -LiteralPath $source -PathType Container)) { $source = $null }
 }
 
+# dc2data takes <game-root>\data and publishes <game-root>\data.zip beside data.json.
 $data = Join-Path $checkout 'port/run/data'
+$dataArchive = Join-Path $checkout 'port/run/data.zip'
 Write-Stage 'checking game data'
-# Every port configuration extracts into the same port\run\data, so they take one lock for it. The game holds it shared while it runs.
+# Every port configuration extracts into the same port\run\data.zip, so they take one lock for it. The game holds it shared while it runs.
 $dataLockFile = Join-Path $locks 'port-data.lock'
 if (-not $source) {
-    # Without a disc an existing data\ is used; otherwise the game starts without its data.
-    if (-not (Test-Path -LiteralPath $data -PathType Container)) {
+    # Without a disc an existing data.zip is used; otherwise the game starts without its data.
+    if (-not (Test-Path -LiteralPath $dataArchive -PathType Leaf)) {
         [Console]::Error.WriteLine('kazarov: no PAL disc found; the game starts without data and its file loads fail')
     }
 } else {
@@ -161,7 +168,7 @@ if (-not $source) {
 
 $lock.Dispose()
 
-# The game reads data\ while it runs, so it holds the data lock shared; another configuration's extraction waits for it.
+# The game reads data.zip while it runs, so it holds the data lock shared; another configuration's extraction waits for it.
 $dataShared = $null
 $dataSharedAnnounced = $false
 while ($null -eq $dataShared) {
@@ -173,12 +180,14 @@ while ($null -eq $dataShared) {
     }
 }
 
-if (-not $source -and (Test-Path -LiteralPath $data -PathType Container)) {
+if (-not $source -and (Test-Path -LiteralPath $dataArchive -PathType Leaf)) {
     & (Join-Path $build 'dc2data.exe') check $data
     if ($LASTEXITCODE) { $dataShared.Dispose(); exit $LASTEXITCODE }
 }
 
 Push-Location $checkout
+# Script runs log at debug to the console (docs/LOGGING.md); a DC2_LOG of the user's own still wins.
+if (-not $env:DC2_LOG) { $env:DC2_LOG = 'debug' }
 Write-Stage 'starting darkchronicle'
 & (Join-Path $build 'darkchronicle.exe') --run-dir (Join-Path $checkout 'port/run') @rest
 $code = $LASTEXITCODE

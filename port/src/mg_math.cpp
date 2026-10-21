@@ -11,8 +11,8 @@ namespace {
 // Retail adds vf0.x (+0) to every lane it copies, which turns -0 into +0.
 float add_vf0x(float v) { return v + 0.0f; }
 
-const int kLanesXYZ[3] = {0, 1, 2};
-const int kLanesXYW[3] = {0, 1, 3};
+constexpr int kLanesXYZ[3] = {0, 1, 2};
+constexpr int kLanesXYW[3] = {0, 1, 3};
 
 int clip_box_overlap(const int *lanes, float *max0, float *min0, float *max1, float *min1) {
     for (int i = 0; i < 3; i++) {
@@ -75,14 +75,14 @@ void mgCreateBox8(float (*corners)[4], float *max, float *min) {
     const float mx[4] = {max[0], max[1], max[2], max[3]};
     const float mn[4] = {min[0], min[1], min[2], min[3]};
     const float out[8][4] = {
-        {mn[0], mn[1], mn[2], mn[3]},
+        {mn[0],           mn[1],           mn[2],           mn[3]          },
         {add_vf0x(mx[0]), add_vf0x(mn[1]), add_vf0x(mn[2]), add_vf0x(mn[3])},
         {add_vf0x(mn[0]), add_vf0x(mx[1]), add_vf0x(mn[2]), add_vf0x(mn[3])},
         {add_vf0x(mx[0]), add_vf0x(mx[1]), add_vf0x(mn[2]), add_vf0x(mx[3])},
         {add_vf0x(mn[0]), add_vf0x(mn[1]), add_vf0x(mx[2]), add_vf0x(mn[3])},
         {add_vf0x(mx[0]), add_vf0x(mn[1]), add_vf0x(mx[2]), add_vf0x(mx[3])},
         {add_vf0x(mn[0]), add_vf0x(mx[1]), add_vf0x(mx[2]), add_vf0x(mx[3])},
-        {mx[0], mx[1], mx[2], mx[3]},
+        {mx[0],           mx[1],           mx[2],           mx[3]          },
     };
     for (int c = 0; c < 8; c++) {
         for (int k = 0; k < 4; k++) {
@@ -330,7 +330,7 @@ void mgInversMatrix(float (*inverse)[4], float (*matrix)[4]) {
 
     const float *p[3] = {b, c, a};
     const float *s[3] = {c, a, b};
-    float rows[3][3];
+    float        rows[3][3];
     for (int k = 0; k < 3; k++) {
         rows[0][k] = p[k][1] * s[k][2] - p[k][2] * s[k][1];
         rows[1][k] = p[k][2] * s[k][0] - p[k][0] * s[k][2];
@@ -357,7 +357,7 @@ void mgInversMatrix(float (*inverse)[4], float (*matrix)[4]) {
 }
 
 void mgApplyMatrixN(float (*out)[4], float (*matrix)[4], float (*in)[4], int count) {
-    // Retail's do-while touches element 0 (and 1 for the bounds variants) even for count < 1; the port touches nothing outside count.
+    // Retail's do-while touches the first elements even for count < 1.
     if (count < 1) {
         return;
     }
@@ -371,7 +371,7 @@ void mgApplyMatrixN(float (*out)[4], float (*matrix)[4], float (*in)[4], int cou
 
 void mgApplyMatrixN_MaxMin(float (*out)[4], float (*matrix)[4], float (*in)[4], int count,
                            float *max, float *min) {
-    // Retail's do-while touches element 0 (and 1 for the bounds variants) even for count < 1; the port touches nothing outside count.
+    // Retail's do-while touches the first elements even for count < 1.
     if (count < 1) {
         return;
     }
@@ -395,7 +395,7 @@ void mgApplyMatrixN_MaxMin(float (*out)[4], float (*matrix)[4], float (*in)[4], 
 
     for (int i = 1; i < count; i++) {
         const float v[4] = {in[i][0], in[i][1], in[i][2], in[i][3]};
-        float r[4];
+        float       r[4];
         vu0::Transform(r, m, v);
         for (int k = 0; k < 4; k++) {
             out[i][k] = r[k];
@@ -411,7 +411,7 @@ void mgApplyMatrixN_MaxMin(float (*out)[4], float (*matrix)[4], float (*in)[4], 
 }
 
 void mgVectorMinMaxN(float *max, float *min, float (*vectors)[4], int count) {
-    // Retail's do-while touches element 0 (and 1 for the bounds variants) even for count < 1; the port touches nothing outside count.
+    // Retail's do-while touches the first elements even for count < 1.
     if (count < 1) {
         return;
     }

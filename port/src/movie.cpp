@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -10,13 +11,17 @@
 #include <string>
 
 #include "audio/mixer.hpp"
+#include "audio_assets.hpp"
 #include "gfx/gfx.hpp"
+#include "log/log.hpp"
 #include "mg_texture.hpp"
+#include "mg_texture_port.hpp"
 #include "mglib.hpp"
 #include "mglib_port.hpp"
 #include "movie.hpp"
 #include "movie_port.hpp"
 #include "platform/clock.hpp"
+#include "platform/datapacks.hpp"
 #include "platform/paths.hpp"
 #include "video/player.hpp"
 
@@ -24,22 +29,33 @@ namespace {
 
 // The retail player is one set of file-scope statics, so one movie plays at a time.
 struct MovieState {
-    video::MoviePlayer        player;
-    std::filesystem::path     path;
-    std::string               texture;
-    bool                      loaded = false;
-    bool                      opened = false;
-    bool                      playing = false;
-    bool                      started = false;
-    bool                      loop = false;
-    bool                      with_audio = false;
-    bool                      audio_on = false;
-    int64_t                   start_tick = 0;
-    gfx::TextureHandle        uploaded_to = gfx::kNullTexture;
-    bool                      dirty = false;
+    video::MoviePlayer                    player;
+    std::filesystem::path                 path;
+    std::string                           texture;
+    bool                                  loaded = false;
+    bool                                  opened = false;
+    bool                                  playing = false;
+    bool                                  started = false;
+    bool                                  loop = false;
+    bool                                  with_audio = false;
+    bool                                  audio_on = false;
+    int64_t                               start_tick = 0;
+    std::chrono::steady_clock::time_point start_time;  /**< Host time when playback starts. */
+    int64_t                               elapsed = 0; /**< Last playback time in 90 kHz units. */
+    gfx::TextureHandle                    uploaded_to = gfx::kNullTexture;
+    bool                                  dirty = false;
 };
 
 MovieState g_movie;
+/** Host clock override for deterministic playback tests. */
+MoviePortNow g_now = nullptr;
+
+/**
+ * Returns the host time used to synchronize movie pictures with audio.
+ */
+std::chrono::steady_clock::time_point Now() {
+    return g_now != nullptr ? g_now() : std::chrono::steady_clock::now();
+}
 
 void MovieStartAudio() {
     audio::Mixer &mixer = audio::DefaultMixer();
@@ -49,12 +65,38 @@ void MovieStartAudio() {
     g_movie.audio_on = true;
 }
 
+/**
+ * Anchors the movie clock to the start of audio playback.
+ */
+void MovieStartClock() {
+    g_movie.start_tick = ClockTickCount();
+    g_movie.start_time = Now();
+    g_movie.elapsed = 0;
+}
+
 void MoviePump() {
     const int64_t elapsed =
-        std::llround(static_cast<double>(ClockTickCount() - g_movie.start_tick) * 90000.0 / ClockTickRate());
+        ClockUnbounded()
+            ? std::llround(static_cast<double>(ClockTickCount() - g_movie.start_tick) * 90000.0 / ClockTickRate())
+            : std::llround(std::chrono::duration<double>(Now() - g_movie.start_time).count() * 90000.0);
+    g_movie.elapsed = elapsed;
     if (g_movie.player.Advance(elapsed)) {
         g_movie.dirty = true;
     }
+}
+
+/**
+ * Reports playback that exceeds the container duration and stall allowance.
+ */
+bool MovieOverran() {
+    const int64_t length = g_movie.player.Length();
+    if (!MoviePortOverran(g_movie.elapsed, length)) {
+        return false;
+    }
+    CT_LOG_WARN(Movie, "movie: {} still has pictures to show {:.1f} s past its {:.1f} s length; ending it",
+                PathsDisplay(g_movie.path), static_cast<double>(kMoviePortOverrun) / 90000.0,
+                static_cast<double>(length) / 90000.0);
+    return true;
 }
 
 void MovieUpload() {
@@ -68,6 +110,9 @@ void MovieUpload() {
     if (texture == nullptr) {
         return;
     }
+    // A 2x or 4x replacement fills the texture at that many host texels per retail texel, so the game's quad, which
+    // keeps its retail texel coordinates, shows the whole picture over the same area.
+    MgTextureSetPhysicalScale(texture, static_cast<uint32_t>(g_movie.player.Scale()));
     const gfx::TextureHandle target = mgPortFindTexture(texture).texture;
     if (target == gfx::kNullTexture || (!g_movie.dirty && target == g_movie.uploaded_to)) {
         return;
@@ -77,8 +122,8 @@ void MovieUpload() {
         return;
     }
 
-    const uint32_t width = std::min(info->width, static_cast<uint32_t>(g_movie.player.Width()));
-    const uint32_t height = std::min(info->height, static_cast<uint32_t>(g_movie.player.Height()));
+    const uint32_t width = std::min(info->pixel_width, static_cast<uint32_t>(g_movie.player.Width()));
+    const uint32_t height = std::min(info->pixel_height, static_cast<uint32_t>(g_movie.player.Height()));
     // Alpha is 0xFF, the renderer's opaque; the IPU's opaque is GS 0x80, which would draw half-transparent here.
     gfx::UpdateTexture(target, 0, 0, 0, width, height, g_movie.player.Rgba().data(),
                        static_cast<uint32_t>(g_movie.player.Width()));
@@ -102,6 +147,8 @@ void MovieReset() {
     g_movie.with_audio = false;
     g_movie.audio_on = false;
     g_movie.start_tick = 0;
+    g_movie.start_time = {};
+    g_movie.elapsed = 0;
     g_movie.uploaded_to = gfx::kNullTexture;
     g_movie.dirty = false;
 }
@@ -131,34 +178,45 @@ std::filesystem::path MoviePortPath(const char *name) {
             c = static_cast<char>(c - 'A' + 'a');
         }
     }
-    return PathsDataRoot() / "movie" / rel;
+    const std::filesystem::path native = rel;
+    if (native.extension() != ".mp4") {
+        return {};
+    }
+    return rel.starts_with("movie/") ? native : std::filesystem::path("movie") / native;
 }
 
 // The retail pools are replaced by the host's allocator. init_sound would reset the PS2 sound driver, which the
-// shared mixer does not need.
-PORT_OVERRIDE void CMovie::Load(char *name, mgCMemory **, int, int, bool with_audio, bool loop, bool) {
+// shared mixer does not need. The width and height are the retail picture size, which a replacement can multiply.
+PORT_OVERRIDE void CMovie::Load(char *name, mgCMemory ** /*unused*/, int width, int height, bool with_audio, bool loop, bool /*unused*/) {
     Term();
     g_movie.loaded = true;
     g_movie.path = MoviePortPath(name);
     g_movie.with_audio = with_audio;
     g_movie.loop = loop;
+    g_movie.player.SetRetailSize(width, height);
     g_movie.opened = g_movie.player.Open(g_movie.path, with_audio);
     if (!g_movie.opened) {
-        std::fprintf(stderr, "movie: %s not found or not an MPEG-2 PSS (%s)\n", name,
-                     PathsDisplay(g_movie.path).c_str());
+        CT_LOG_WARN(Movie, "movie: {} not found or not a playable MP4 ({})", name,
+                    PathsDisplay(g_movie.path));
+    } else if (g_movie.player.SourceWidth() != g_movie.player.Width() ||
+               g_movie.player.SourceHeight() != g_movie.player.Height()) {
+        CT_LOG_INFO(Movie, "movie: {} is {}x{}; a replacement should be 1, 2 or 4 times {}x{}, so it is resampled to {}x{}",
+                    name, g_movie.player.SourceWidth(), g_movie.player.SourceHeight(), width, height,
+                    g_movie.player.Width(), g_movie.player.Height());
     }
 }
 
 PORT_OVERRIDE void CMovie::Play(char *path) {
+    CT_LOG_DEBUG(Movie, "playing movie {}", path);
     g_movie.texture = path;
     g_movie.playing = true;
     g_movie.started = true;
     is_playing = true;
-    g_movie.start_tick = ClockTickCount();
     g_movie.dirty = true;
     if (g_movie.opened && g_movie.with_audio && g_movie.player.Audio() != nullptr) {
         MovieStartAudio();
     }
+    MovieStartClock();
     MovieUpload();
 }
 
@@ -183,7 +241,7 @@ PORT_OVERRIDE int CMovie::EndCheck() {
     }
 
     MoviePump();
-    if (!g_movie.player.Ended()) {
+    if (!g_movie.player.Ended() && !MovieOverran()) {
         return 0;
     }
     if (!g_movie.loop) {
@@ -194,14 +252,26 @@ PORT_OVERRIDE int CMovie::EndCheck() {
     if (!g_movie.opened) {
         return 1;
     }
-    g_movie.start_tick = ClockTickCount();
     g_movie.dirty = true;
     if (g_movie.with_audio && g_movie.player.Audio() != nullptr) {
         MovieStartAudio();
     }
+    MovieStartClock();
     return 0;
 }
 
 PORT_OVERRIDE int CMovie::IsStarted() {
     return g_movie.started ? 1 : 0;
+}
+
+int64_t MoviePortClock() {
+    return g_movie.elapsed;
+}
+
+bool MoviePortOverran(int64_t elapsed, int64_t length) {
+    return length > 0 && elapsed > length && elapsed - length > kMoviePortOverrun;
+}
+
+void MoviePortSetNow(MoviePortNow now) {
+    g_now = now;
 }

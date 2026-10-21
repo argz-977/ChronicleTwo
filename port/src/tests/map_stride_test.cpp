@@ -39,7 +39,7 @@ class RecordingWater : public CWater {
 public:
     std::vector<float> translations;
 
-    int Draw(u_int *, float (*matrix)[4], mgCDrawManager *) override {
+    int Draw(u_int * /*tag*/, float (*matrix)[4], mgCDrawManager * /*draw_manager*/) override {
         translations.push_back(matrix[3][0]);
         return 0;
     }
@@ -71,7 +71,8 @@ TEST(MapStride, WaterOverlayVisitsEveryPartPointer) {
     map.water_surface_num = 1;
     map.water = &placement;
     map.water_num = 1;
-    mgCTexture screen, overlay;
+    mgCTexture screen;
+    mgCTexture overlay;
     map.DrawWater(nullptr, &screen, &overlay);
     EXPECT_EQ(visual.translations, (std::vector<float>{31.0f, 92.0f, 31.0f, 92.0f}));
 }

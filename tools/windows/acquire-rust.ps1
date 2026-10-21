@@ -82,9 +82,10 @@ $env:PATH = "$(Join-Path $prefix 'bin');$llvmBin;$env:PATH"
 $cargo = Join-Path $prefix 'bin/cargo.exe'
 & $cargo fetch --locked --manifest-path (Join-Path $source 'tools/kazarov/Cargo.toml')
 if ($LASTEXITCODE) { throw 'Cargo dependency fetch failed' }
+$cxxbridgeArchive = Get-VerifiedArchive 'cxxbridge-1.0.205-windows-x64.zip' `
+    'https://github.com/Plarpoon/Kazarov/releases/download/deps-1/cxxbridge-1.0.205-windows-x64.zip' `
+    '8C9529BFBAAF423DBD3F2F9583C19EA6CA92E1E09D2E7B0C474799F57AA39A21'
 if (!(Test-Path -LiteralPath (Join-Path $prefix 'bin/cxxbridge.exe'))) {
-    $env:CARGO_TARGET_DIR = Join-Path $rustRoot 'cxxbridge-build'
-    & $cargo install cxxbridge-cmd --version 1.0.205 --locked --root $prefix
-    if ($LASTEXITCODE) { throw 'cxxbridge-cmd build failed' }
+    Expand-Archive -LiteralPath $cxxbridgeArchive -DestinationPath (Join-Path $prefix 'bin') -Force
 }
 Write-Output "Rust $version ($triple), Corrosion 0.6.1, and cxxbridge-cmd 1.0.205 ready in $rustRoot"

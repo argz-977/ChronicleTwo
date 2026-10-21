@@ -32,6 +32,9 @@ PresentStats PresentGetStats();
 void PresentResetStats();
 void PresentTickRendered();
 void PresentWaitFrame(int start, int frames);
+// Async only: hands the tick just rendered to the render thread, whose frame began at tick `start` and lasts `frames`.
+// Called by the game thread holding a render lease.
+void        PresentPublishTick(int start, int frames);
 void PresentTickEnd();
 std::string PresentFpsText();
 // Frame-exit screenshot renders, outside a frame. They present, which is what ReadbackFrame reads.

@@ -1,7 +1,5 @@
 #include <gtest/gtest.h>
 
-#include <cstring>
-
 #include "funcpoint.hpp"
 #include "mg_memory.hpp"
 
@@ -20,7 +18,8 @@ TEST(FuncPointMemory, CopyPreservesAllAnimationVectorsAndNames) {
     alignas(64) u_long128 storage[2048]{};
     mgCMemory             memory;
     memory.stSetBuffer(storage, 2048);
-    CFuncPointMngr source, destination;
+    CFuncPointMngr source;
+    CFuncPointMngr destination;
     auto          *point = source.Add(FUNC_POINT_ANIME, &memory);
     ASSERT_NE(point, nullptr);
     char name[] = "moving-part";

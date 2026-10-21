@@ -15,8 +15,8 @@ namespace {
 constexpr float kTol = 1e-3f;
 constexpr float kZTol = 1.0f;
 
-constexpr Vec4 kGuardMin{1.0f, 1.0f, 0.0f, 10.0f};
-constexpr Vec4 kGuardMax{4095.0f, 4095.0f, 0.0f, 1000.0f};
+constexpr Vec4  kGuardMin{.x = 1.0f, .y = 1.0f, .z = 0.0f, .w = 10.0f};
+constexpr Vec4  kGuardMax{.x = 4095.0f, .y = 4095.0f, .z = 0.0f, .w = 1000.0f};
 constexpr float kInvFar = 1.0f / 1000.0f;
 constexpr float kInvNear = 1.0f / 10.0f;
 
@@ -46,7 +46,7 @@ void ExpectHeader(int variant, bool skinned, uint32_t dw0, uint32_t dw1, uint32_
 
 Prog0Pipeline Pipe(bool ref_sphere, bool vertex_blend, Prog0Lighting lighting, bool vertex_colour, bool vc_add,
                    Prog0Clip clip, Prog0Output output) {
-    return {ref_sphere, vertex_blend, lighting, vertex_colour, vc_add, clip, output};
+    return {.ref_sphere = ref_sphere, .vertex_blend = vertex_blend, .lighting = lighting, .vertex_colour = vertex_colour, .vc_add = vc_add, .clip = clip, .output = output};
 }
 
 // Vertex code bits: slot 0 at bits 17..12, slot 1 at 11..6, slot 2 at 5..0.
@@ -55,7 +55,9 @@ uint32_t CfBit(int slot, uint32_t code) {
 }
 
 std::array<Vec4, 3> Screen10_4() {
-    return {{{2100.0f, 2100.0f, 0.0f, 0.01f}, {2200.0f, 2100.0f, 0.0f, 0.01f}, {2100.0f, 2200.0f, 0.0f, 0.01f}}};
+    return {
+        {{.x = 2100.0f, .y = 2100.0f, .z = 0.0f, .w = 0.01f}, {.x = 2200.0f, .y = 2100.0f, .z = 0.0f, .w = 0.01f}, {.x = 2100.0f, .y = 2200.0f, .z = 0.0f, .w = 0.01f}}
+    };
 }
 
 std::array<uint32_t, 3> Guards(const std::array<Vec4, 3>& v) {
@@ -65,11 +67,13 @@ std::array<uint32_t, 3> Guards(const std::array<Vec4, 3>& v) {
 }
 
 std::array<Prog0ClipVertex, 3> Triangle10_5() {
-    return {{
-        {{0.0f, 0.0f, 1.0f, 2.0f}, {255.0f, 0.0f, 0.0f, 255.0f}, {0.0f, 0.0f, 1.0f, 0.0f}},
-        {{1.0f, 0.0f, 0.0f, 2.0f}, {0.0f, 255.0f, 0.0f, 255.0f}, {1.0f, 0.0f, 1.0f, 0.0f}},
-        {{0.0f, 1.0f, -3.0f, 1.0f}, {0.0f, 0.0f, 255.0f, 255.0f}, {0.0f, 1.0f, 1.0f, 0.0f}},
-    }};
+    return {
+        {
+         {.pos = {.x = 0.0f, .y = 0.0f, .z = 1.0f, .w = 2.0f}, .colour = {.x = 255.0f, .y = 0.0f, .z = 0.0f, .w = 255.0f}, .uv = {.x = 0.0f, .y = 0.0f, .z = 1.0f, .w = 0.0f}},
+         {.pos = {.x = 1.0f, .y = 0.0f, .z = 0.0f, .w = 2.0f}, .colour = {.x = 0.0f, .y = 255.0f, .z = 0.0f, .w = 255.0f}, .uv = {.x = 1.0f, .y = 0.0f, .z = 1.0f, .w = 0.0f}},
+         {.pos = {.x = 0.0f, .y = 1.0f, .z = -3.0f, .w = 1.0f}, .colour = {.x = 0.0f, .y = 0.0f, .z = 255.0f, .w = 255.0f}, .uv = {.x = 0.0f, .y = 1.0f, .z = 1.0f, .w = 0.0f}},
+         }
+    };
 }
 
 Prog0ClipPolygon AsPolygon(const std::array<Prog0ClipVertex, 3>& tri) {
@@ -82,10 +86,12 @@ Prog0ClipPolygon AsPolygon(const std::array<Prog0ClipVertex, 3>& tri) {
 }
 
 Mat4 ClipScreen10_5() {
-    return {{{256.0f, 0.0f, 0.0f, 0.0f},
-             {0.0f, 256.0f, 0.0f, 0.0f},
-             {0.0f, 0.0f, -8350000.0f, 0.0f},
-             {2048.0f, 2048.0f, 8350000.0f, 1.0f}}};
+    return {
+        {{.x = 256.0f, .y = 0.0f, .z = 0.0f, .w = 0.0f},
+         {.x = 0.0f, .y = 256.0f, .z = 0.0f, .w = 0.0f},
+         {.x = 0.0f, .y = 0.0f, .z = -8350000.0f, .w = 0.0f},
+         {.x = 2048.0f, .y = 2048.0f, .z = 8350000.0f, .w = 1.0f}}
+    };
 }
 
 // Editor fog: mgSetFogParam(50, 400, ..., far_value = 255, near_value = 0). Yields F' = 255 everywhere.
@@ -113,7 +119,7 @@ TEST(Vu1Prog0Cpu, Vector10_3FogMidDepth) {
 
 TEST(Vu1Prog0Cpu, Vector10_3PackedMidDepthF23Adc0) {
     const float fog = FogValue(NormalFog(), 0.01f);
-    const GsXyzf p = PackProg0Xyzf(Vec4{2048.0f, 2048.0f, 0.0f, 0.0f}, fog, false);
+    const GsXyzf p = PackProg0Xyzf(Vec4{.x = 2048.0f, .y = 2048.0f, .z = 0.0f, .w = 0.0f}, fog, false);
     EXPECT_EQ(p.f, 23);
     EXPECT_FALSE(p.adc);
 }
@@ -121,7 +127,7 @@ TEST(Vu1Prog0Cpu, Vector10_3PackedMidDepthF23Adc0) {
 TEST(Vu1Prog0Cpu, Vector10_3EditorFogPacksF255Adc0) {
     const float fog = FogValue(EditorFog(), 0.01f);
     EXPECT_EQ(fog, 255.0f);
-    const GsXyzf p = PackProg0Xyzf(Vec4{2048.0f, 2048.0f, 0.0f, 0.0f}, fog, false);
+    const GsXyzf p = PackProg0Xyzf(Vec4{.x = 2048.0f, .y = 2048.0f, .z = 0.0f, .w = 0.0f}, fog, false);
     EXPECT_EQ(p.f, 255);
     EXPECT_FALSE(p.adc);
 }
@@ -628,7 +634,7 @@ TEST(Vu1Prog0Cpu, ClassifyPartialTwoOfThreeSameBit) {
 
 
 TEST(Vu1Prog0Cpu, PackXyzfFieldsAndAdc) {
-    const GsXyzf p = PackProg0Xyzf(Vec4{2048.0f, 2048.0f, 4175000.0f, 0.0f}, 255.0f, true);
+    const GsXyzf p = PackProg0Xyzf(Vec4{.x = 2048.0f, .y = 2048.0f, .z = 4175000.0f, .w = 0.0f}, 255.0f, true);
     EXPECT_EQ(p.x, 32768);
     EXPECT_EQ(p.y, 32768);
     EXPECT_EQ(p.z, 4175000u);
@@ -637,7 +643,7 @@ TEST(Vu1Prog0Cpu, PackXyzfFieldsAndAdc) {
 }
 
 TEST(Vu1Prog0Cpu, PackXyzfNegativeXWrapsLow16) {
-    const GsXyzf p = PackProg0Xyzf(Vec4{-1.0f, 0.0f, 0.0f, 0.0f}, 0.0f, false);
+    const GsXyzf p = PackProg0Xyzf(Vec4{.x = -1.0f, .y = 0.0f, .z = 0.0f, .w = 0.0f}, 0.0f, false);
     EXPECT_EQ(p.x, 65520);
     EXPECT_EQ(p.f, 0);
     EXPECT_FALSE(p.adc);
@@ -664,10 +670,12 @@ std::vector<bool> RunWindowBatches(const std::vector<uint32_t>& guard, const std
 }
 
 std::vector<Vec4> StripWithFourth(Vec4 v3) {
-    return std::vector<Vec4>{{2100.0f, 2100.0f, 0.0f, 0.01f},
-                             {2200.0f, 2100.0f, 0.0f, 0.01f},
-                             {2100.0f, 2200.0f, 0.0f, 0.01f},
-                             v3};
+    return std::vector<Vec4>{
+        {.x = 2100.0f, .y = 2100.0f, .z = 0.0f, .w = 0.01f},
+        {.x = 2200.0f, .y = 2100.0f, .z = 0.0f, .w = 0.01f},
+        {.x = 2100.0f, .y = 2200.0f, .z = 0.0f, .w = 0.01f},
+        v3
+    };
 }
 
 std::vector<bool> StripAdcAllIn(const std::vector<Vec4>& screen, uint32_t mirror) {
@@ -687,7 +695,7 @@ std::vector<Batch> StripBatches(int vertex_num, int batch_limit) {
     for (int b = 0;; ++b) {
         const int start = (batch_limit - 2) * b;
         const int remaining = vertex_num - start;
-        out.push_back({start, std::min(batch_limit, remaining)});
+        out.push_back({.start = start, .count = std::min(batch_limit, remaining)});
         if (remaining <= batch_limit) {
             break;
         }
@@ -722,7 +730,7 @@ void ExpectStripReorderMatchesRetail(int vertex_num, int batch_limit) {
     std::vector<Vec4> screen(static_cast<std::size_t>(vertex_num));
     std::vector<uint32_t> guard(static_cast<std::size_t>(vertex_num));
     for (std::size_t i = 0; i < screen.size(); ++i) {
-        screen[i] = {static_cast<float>(coord(rng)), static_cast<float>(coord(rng)), 0.0f, 0.01f};
+        screen[i] = {.x = static_cast<float>(coord(rng)), .y = static_cast<float>(coord(rng)), .z = 0.0f, .w = 0.01f};
         guard[i] = RandomGuard(rng);
     }
 
@@ -804,7 +812,7 @@ TEST(Vu1Prog0Cpu, WindowAdcBatchSplitInvariant) {
     for (std::size_t k = 0; k < guard.size(); ++k) {
         const bool in2 = k >= 2 && guard[k - 2] == kGuardMask;
         const bool in1 = k >= 1 && guard[k - 1] == kGuardMask;
-        direct[k] = !(in2 && in1 && guard[k] == kGuardMask);
+        direct[k] = !in2 || !in1 || guard[k] != kGuardMask;
     }
 
     EXPECT_EQ(RunWindowBatches(guard, {40}), direct);
@@ -872,10 +880,10 @@ TEST(Vu1Prog0Cpu, StripReorderMatchesRetailAcceptBatch42) {
 }
 
 TEST(Vu1Prog0Cpu, GsToNdcMapsCentreAndEdges) {
-    const Vec4 centre = GsToNdc(Vec4{2048.0f, 2048.0f, 0.0f, 1.0f}, 512.0f, 384.0f);
+    const Vec4 centre = GsToNdc(Vec4{.x = 2048.0f, .y = 2048.0f, .z = 0.0f, .w = 1.0f}, 512.0f, 384.0f);
     EXPECT_NEAR(centre.x, 0.0f, kTol);
     EXPECT_NEAR(centre.y, 0.0f, kTol);
-    const Vec4 corner = GsToNdc(Vec4{2560.0f, 1664.0f, 0.0f, 1.0f}, 512.0f, 384.0f);
+    const Vec4 corner = GsToNdc(Vec4{.x = 2560.0f, .y = 1664.0f, .z = 0.0f, .w = 1.0f}, 512.0f, 384.0f);
     EXPECT_NEAR(corner.x, 1.0f, kTol);
     EXPECT_NEAR(corner.y, -1.0f, kTol);
 }

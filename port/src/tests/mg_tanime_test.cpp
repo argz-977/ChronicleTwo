@@ -21,12 +21,12 @@ namespace {
 using Quads = std::vector<u_long128>;
 using Levels = std::array<u_long128 *, MG_TEXTURE_LEVEL_MAX>;
 
-constexpr int kTextureCount = 16;
-constexpr int kBlockCount = 2;
-constexpr size_t kStorageQuads = 4096;
-constexpr int kSide = 16;
-constexpr int kCopySide = 8;
-constexpr int kCopyOrigin = 4;
+constexpr int      kTextureCount = 16;
+constexpr int      kBlockCount = 2;
+constexpr size_t   kStorageQuads = 4096;
+constexpr int      kSide = 16;
+constexpr int      kCopySide = 8;
+constexpr int      kCopyOrigin = 4;
 constexpr uint64_t kRetailTexa = 0x0000008000000080ULL;
 
 Quads Pack(const std::vector<uint8_t> &bytes) {
@@ -61,8 +61,8 @@ public:
     Harness(const Harness &) = delete;
     Harness &operator=(const Harness &) = delete;
 
-    Quads         storage = Quads(kStorageQuads, 0);
-    mgCMemory     memory;
+    Quads             storage = Quads(kStorageQuads, 0);
+    mgCMemory         memory;
     mgCTextureManager manager;
 };
 
@@ -70,10 +70,12 @@ public:
 class StateReset {
 public:
     StateReset() = default;
+
     ~StateReset() {
         mgPortResetGs();
         mgCTextureAnime::stop_anime = 0;
     }
+
     StateReset(const StateReset &) = delete;
     StateReset &operator=(const StateReset &) = delete;
 };
@@ -103,10 +105,10 @@ void SetCopy(mgCTexAnimeData &data, mgCTexture *src, mgCTexture *dest, int wait)
 } // namespace
 
 TEST(MgTanime, CopyRecordHoldsTwoCallsThenAdvances) {
-    StateReset reset;
-    Harness    h;
-    Quads      src_px = Pack(RgbaPixels(0x21));
-    Quads      dst_px = Pack(RgbaPixels(0x55));
+    StateReset  reset;
+    Harness     h;
+    Quads       src_px = Pack(RgbaPixels(0x21));
+    Quads       dst_px = Pack(RgbaPixels(0x55));
     mgCTexture *src = Enter32(h, "tanime_src", src_px.data());
     mgCTexture *dst = Enter32(h, "tanime_dst", dst_px.data());
     ASSERT_NE(src, nullptr);
@@ -146,10 +148,10 @@ TEST(MgTanime, CopyRecordHoldsTwoCallsThenAdvances) {
 }
 
 TEST(MgTanime, StopAnimeFreezesGroup) {
-    StateReset reset;
-    Harness    h;
-    Quads      src_px = Pack(RgbaPixels(0x21));
-    Quads      dst_px = Pack(RgbaPixels(0x55));
+    StateReset  reset;
+    Harness     h;
+    Quads       src_px = Pack(RgbaPixels(0x21));
+    Quads       dst_px = Pack(RgbaPixels(0x55));
     mgCTexture *src = Enter32(h, "tanime_stop_src", src_px.data());
     mgCTexture *dst = Enter32(h, "tanime_stop_dst", dst_px.data());
     ASSERT_NE(src, nullptr);
@@ -186,11 +188,15 @@ TEST(MgTanime, TexAnimeWritesRetailTexa) {
     EXPECT_EQ(mgPortGs().texa, kRetailTexa);
 }
 
+namespace {
+
 class MgTanimeGpu : public testing::Test {
 protected:
     dc::test::GfxFixture gfx_;
     Harness              h_;
 };
+
+} // namespace
 
 TEST_F(MgTanimeGpu, TrueColourRecordDrawsIntoRegisteredTexture) {
     StateReset reset;
@@ -253,10 +259,10 @@ TEST_F(MgTanimeGpu, TrueColourRecordDrawsIntoRegisteredTexture) {
 
     for (int y = 0; y < kSide; y++) {
         for (int x = 0; x < kSide; x++) {
-            const bool inside = x >= kCopyOrigin && x < kCopyOrigin + kCopySide && y >= kCopyOrigin &&
-                                y < kCopyOrigin + kCopySide;
+            const bool     inside = x >= kCopyOrigin && x < kCopyOrigin + kCopySide && y >= kCopyOrigin &&
+                                    y < kCopyOrigin + kCopySide;
             const uint8_t *got = &target_px[(static_cast<size_t>(y) * kSide + x) * 4];
-            const uint8_t *want = inside ? &source_px[0] : &image_px[(static_cast<size_t>(y) * kSide + x) * 4];
+            const uint8_t *want = inside ? source_px.data() : &image_px[(static_cast<size_t>(y) * kSide + x) * 4];
             for (int c = 0; c < 3; c++) {
                 EXPECT_EQ(got[c], want[c]) << "channel " << c << " texel " << x << "," << y;
             }

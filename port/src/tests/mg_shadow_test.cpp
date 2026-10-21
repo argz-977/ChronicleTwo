@@ -39,7 +39,7 @@ class PresentRenderer {
 public:
     PresentRenderer(int width, int height) {
         SetEnv("VK_LAYER_VALIDATE_SYNC", "1", 0);
-        WindowConfig window{width, height, true};
+        WindowConfig window{.width = width, .height = height, .headless = true};
         window.vulkan = false;
         WindowInit(window);
 
@@ -66,11 +66,11 @@ public:
 };
 
 Vec4 P(float x, float y, float z) {
-    return {x, y, z, 1.0f};
+    return {.x = x, .y = y, .z = z, .w = 1.0f};
 }
 
 Vec4 Average(const std::vector<Vec4> &points) {
-    Vec4 sum{0.0f, 0.0f, 0.0f, 0.0f};
+    Vec4 sum{.x = 0.0f, .y = 0.0f, .z = 0.0f, .w = 0.0f};
     for (const Vec4 &p : points) {
         sum = sum + p;
     }
@@ -152,9 +152,9 @@ struct Pixels {
     uint32_t height = 0;
     gfx::LogicalMapping mapping{};
 
-    const uint8_t *At(float x, float y) const {
-        const size_t px = static_cast<size_t>(x * mapping.scale_x + mapping.offset_x);
-        const size_t py = static_cast<size_t>(y * mapping.scale_y + mapping.offset_y);
+    [[nodiscard]] const uint8_t *At(float x, float y) const {
+        const auto px = static_cast<size_t>(x * mapping.scale_x + mapping.offset_x);
+        const auto py = static_cast<size_t>(y * mapping.scale_y + mapping.offset_y);
         return &rgba[(py * width + px) * 4];
     }
 };
@@ -278,7 +278,9 @@ Pixels RenderGroundUnder(const std::vector<Caster> &casters) {
 TEST(MgShadow, QuadOverPlaneDarkensFootprint) {
     PresentRenderer renderer(640, 480);
 
-    const Pixels pixels = RenderGroundUnder({{0.0f, 0.5f, 1.0f}});
+    const Pixels pixels = RenderGroundUnder({
+        {.centre = 0.0f, .top = 0.5f, .half = 1.0f}
+    });
 
     const uint8_t *inside = pixels.At(256.0f, 240.0f);
     const uint8_t *outside = pixels.At(50.0f, 50.0f);
@@ -291,8 +293,13 @@ TEST(MgShadow, QuadOverPlaneDarkensFootprint) {
 TEST(MgShadow, OverlappingCastersShadeTheirUnionNotTheirSum) {
     PresentRenderer renderer(640, 480);
 
-    const Pixels single = RenderGroundUnder({{0.0f, 0.5f, 1.0f}});
-    const Pixels doubled = RenderGroundUnder({{0.0f, 0.5f, 1.0f}, {0.5f, 0.5f, 1.0f}});
+    const Pixels single = RenderGroundUnder({
+        {.centre = 0.0f, .top = 0.5f, .half = 1.0f}
+    });
+    const Pixels doubled = RenderGroundUnder({
+        {.centre = 0.0f, .top = 0.5f, .half = 1.0f},
+        {.centre = 0.5f, .top = 0.5f, .half = 1.0f}
+    });
 
     const uint8_t single_inside = single.At(256.0f, 240.0f)[0];
     const uint8_t doubled_inside = doubled.At(256.0f, 240.0f)[0];
@@ -306,7 +313,10 @@ TEST(MgShadow, SecondCasterKeepsItsOwnFootprint) {
     // The first caster spans -1..1 footprints and the second 0.5..2.5. Pixel x = 406 is 1.5
     // footprints from the centre, under the second caster alone; the first caster's counts must not
     // have consumed it.
-    const Pixels pixels = RenderGroundUnder({{0.0f, 0.5f, 1.0f}, {1.5f, 0.5f, 1.0f}});
+    const Pixels pixels = RenderGroundUnder({
+        {.centre = 0.0f, .top = 0.5f, .half = 1.0f},
+        {.centre = 1.5f, .top = 0.5f, .half = 1.0f}
+    });
 
     EXPECT_LT(pixels.At(406.0f, 240.0f)[0] + 40, pixels.At(50.0f, 50.0f)[0]);
 }
@@ -316,7 +326,9 @@ TEST(MgShadow, CasterBehindTheNearPlaneCastsNoShadow) {
 
     // Top at -0.2 plane depths: a corner is behind the eye, so retail rejects the caster and the
     // eye's volume is never counted.
-    const Pixels pixels = RenderGroundUnder({{0.0f, -0.2f, 1.0f}});
+    const Pixels pixels = RenderGroundUnder({
+        {.centre = 0.0f, .top = -0.2f, .half = 1.0f}
+    });
 
     const uint8_t *inside = pixels.At(256.0f, 240.0f);
     const uint8_t *outside = pixels.At(50.0f, 50.0f);
@@ -338,7 +350,7 @@ mgPortProjection TestProjection() {
 }
 
 // A unit right triangle in the plane z = depth, dropped by `offset`.
-std::vector<SdwPrismTriangle> PrismFor(float depth, const Vec4 &offset, const Vec4 &bias_dir = {0.0f, 1.0f, 0.0f, 0.0f},
+std::vector<SdwPrismTriangle> PrismFor(float depth, const Vec4 &offset, const Vec4 &bias_dir = {.x = 0.0f, .y = 1.0f, .z = 0.0f, .w = 0.0f},
                                        float x_scale = 1.0f) {
     const Vec4 top[3] = {P(0, 0, depth), P(x_scale, 0, depth), P(0, 1, depth)};
     const Vec4 drop[3] = {top[0] + offset, top[1] + offset, top[2] + offset};
@@ -375,7 +387,7 @@ TEST(MgShadowReject, CornerBeyondYGuardBandIsRejected) {
     const Vec4 top[3] = {P(0, 0, 100), P(1, 0, 100), P(0, 4000, 100)};
     const Vec4 drop[3] = {P(0, 0, 50), P(1, 0, 50), P(0, 4000, 50)};
     std::vector<SdwPrismTriangle> tris;
-    AppendShadowPrism(top, drop, {0.0f, 1.0f, 0.0f, 0.0f}, TestProjection(), tris);
+    AppendShadowPrism(top, drop, {.x = 0.0f, .y = 1.0f, .z = 0.0f, .w = 0.0f}, TestProjection(), tris);
     EXPECT_TRUE(tris.empty());
 }
 

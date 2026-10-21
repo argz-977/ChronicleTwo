@@ -1,48 +1,50 @@
-#include "vu1_oracle/sdw_oracle.hpp"
+#include <gtest/gtest.h>
 
 #include <array>
 #include <cstdint>
 #include <vector>
 
-#include <gtest/gtest.h>
+#include "vu1_oracle/sdw_oracle.hpp"
 
 namespace dc::vu1 {
 namespace {
 
-constexpr float kTol = 1e-6f;
+constexpr float   kTol = 1e-6f;
 constexpr int32_t kZc = 2097152;
 constexpr int32_t kZt = 0;
 
 struct Scr {
-    int32_t x;
-    int32_t y;
-    int32_t z;
+    int32_t  x;
+    int32_t  y;
+    int32_t  z;
     uint32_t f;
 };
 
 Mat4 Rows(Vec4 r0, Vec4 r1, Vec4 r2, Vec4 r3) {
-    return {{r0, r1, r2, r3}};
+    return {
+        {r0, r1, r2, r3}
+    };
 }
 
 // Spec 10 common setup. Input w is 1.0 everywhere (open point 3).
 SdwParams CommonParams() {
     SdwParams p{};
-    p.object[0] = {1, 0, 0, 0};
-    p.object[1] = {0, 1, 0, 0};
-    p.object[2] = {0, 0, 1, 0};
-    p.light = {3, 0, -4, 0};
+    p.object[0] = {.x = 1, .y = 0, .z = 0, .w = 0};
+    p.object[1] = {.x = 0, .y = 1, .z = 0, .w = 0};
+    p.object[2] = {.x = 0, .y = 0, .z = 1, .w = 0};
+    p.light = {.x = 3, .y = 0, .z = -4, .w = 0};
     p.vc = Identity();
-    p.sm = Rows({1, 0, 0, 0}, {0, 1, 0, 0}, {0.75f, 0, 0, 0}, {0, 0, 0, 1});
-    p.cs = Rows({1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 4194304.0f, 0}, {0, 0, 0, 1});
+    p.sm = Rows({.x = 1, .y = 0, .z = 0, .w = 0}, {.x = 0, .y = 1, .z = 0, .w = 0}, {.x = 0.75f, .y = 0, .z = 0, .w = 0}, {.x = 0, .y = 0, .z = 0, .w = 1});
+    p.cs = Rows({.x = 1, .y = 0, .z = 0, .w = 0}, {.x = 0, .y = 1, .z = 0, .w = 0}, {.x = 0, .y = 0, .z = 4194304.0f, .w = 0}, {.x = 0, .y = 0, .z = 0, .w = 1});
     return p;
 }
 
 // Spec 10 test 3: diag(-1,1,1,1) object, VC and SM; CS row 1 x stays 0 (7.3).
 SdwParams MirroredParams() {
     SdwParams p = CommonParams();
-    p.object[0] = {-1, 0, 0, 0};
-    p.vc = Rows({-1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0}, {0, 0, 0, 1});
-    p.sm = Rows({-1, 0, 0, 0}, {0, 1, 0, 0}, {0.75f, 0, 0, 0}, {0, 0, 0, 1});
+    p.object[0] = {.x = -1, .y = 0, .z = 0, .w = 0};
+    p.vc = Rows({.x = -1, .y = 0, .z = 0, .w = 0}, {.x = 0, .y = 1, .z = 0, .w = 0}, {.x = 0, .y = 0, .z = 1, .w = 0}, {.x = 0, .y = 0, .z = 0, .w = 1});
+    p.sm = Rows({.x = -1, .y = 0, .z = 0, .w = 0}, {.x = 0, .y = 1, .z = 0, .w = 0}, {.x = 0.75f, .y = 0, .z = 0, .w = 0}, {.x = 0, .y = 0, .z = 0, .w = 1});
     return p;
 }
 
@@ -53,7 +55,7 @@ void ExpectVecNear(Vec4 got, Vec4 want) {
     EXPECT_NEAR(got.w, want.w, kTol);
 }
 
-void ExpectQuad(const SdwQuad& quad, const Scr (&want)[4]) {
+void ExpectQuad(const SdwQuad &quad, const Scr (&want)[4]) {
     for (uint32_t i = 0; i < 4; ++i) {
         EXPECT_EQ(quad.v[i].x, want[i].x) << "vertex " << i;
         EXPECT_EQ(quad.v[i].y, want[i].y) << "vertex " << i;
@@ -64,15 +66,15 @@ void ExpectQuad(const SdwQuad& quad, const Scr (&want)[4]) {
 }
 
 SdwKick Add() {
-    return {SdwKickKind::AlphaAdd, 0};
+    return {.kind = SdwKickKind::AlphaAdd, .quad = 0};
 }
 
 SdwKick Sub() {
-    return {SdwKickKind::AlphaSub, 0};
+    return {.kind = SdwKickKind::AlphaSub, .quad = 0};
 }
 
 SdwKick Quad(uint8_t g) {
-    return {SdwKickKind::Quad, g};
+    return {.kind = SdwKickKind::Quad, .quad = g};
 }
 
 // Spec 5.4 quotes s in 12.4 units; float zsign is the same area times 256.
@@ -82,56 +84,56 @@ constexpr float kS(float spec_units) {
 
 // Test 1: lit, above the plane, path B.
 const Scr kTest1Quads[kSdwQuadCount][4] = {
-    {{0, 0, kZc, 1}, {8, 0, kZc, 1}, {14, 0, kZt, 1}, {6, 0, kZt, 1}},
-    {{8, 0, kZc, 1}, {0, 8, kZc, 1}, {6, 8, kZt, 1}, {14, 0, kZt, 1}},
-    {{0, 8, kZc, 1}, {0, 0, kZc, 1}, {6, 0, kZt, 1}, {6, 8, kZt, 1}},
-    {{6, 0, kZt, 1}, {14, 0, kZt, 1}, {6, 8, kZt, 1}, {6, 8, kZt, 1}},
-    {{0, 8, kZc, 1}, {8, 0, kZc, 1}, {0, 0, kZc, 1}, {0, 0, kZc, 1}},
+    {{.x = 0, .y = 0, .z = kZc, .f = 1}, {.x = 8, .y = 0, .z = kZc, .f = 1},  {.x = 14, .y = 0, .z = kZt, .f = 1}, {.x = 6, .y = 0, .z = kZt, .f = 1} },
+    {{.x = 8, .y = 0, .z = kZc, .f = 1}, {.x = 0, .y = 8, .z = kZc, .f = 1},  {.x = 6, .y = 8, .z = kZt, .f = 1},  {.x = 14, .y = 0, .z = kZt, .f = 1}},
+    {{.x = 0, .y = 8, .z = kZc, .f = 1}, {.x = 0, .y = 0, .z = kZc, .f = 1},  {.x = 6, .y = 0, .z = kZt, .f = 1},  {.x = 6, .y = 8, .z = kZt, .f = 1} },
+    {{.x = 6, .y = 0, .z = kZt, .f = 1}, {.x = 14, .y = 0, .z = kZt, .f = 1}, {.x = 6, .y = 8, .z = kZt, .f = 1},  {.x = 6, .y = 8, .z = kZt, .f = 1} },
+    {{.x = 0, .y = 8, .z = kZc, .f = 1}, {.x = 8, .y = 0, .z = kZc, .f = 1},  {.x = 0, .y = 0, .z = kZc, .f = 1},  {.x = 0, .y = 0, .z = kZc, .f = 1} },
 };
 
 // Test 2: back-facing, path A.
 const Scr kTest2Quads[kSdwQuadCount][4] = {
-    {{0, 0, kZc, 1}, {6, 0, kZt, 1}, {6, 8, kZt, 1}, {0, 8, kZc, 1}},
-    {{0, 8, kZc, 1}, {6, 8, kZt, 1}, {14, 0, kZt, 1}, {8, 0, kZc, 1}},
-    {{8, 0, kZc, 1}, {14, 0, kZt, 1}, {6, 0, kZt, 1}, {0, 0, kZc, 1}},
-    {{14, 0, kZt, 1}, {6, 8, kZt, 1}, {6, 0, kZt, 1}, {6, 0, kZt, 1}},
-    {{0, 0, kZc, 1}, {0, 8, kZc, 1}, {8, 0, kZc, 1}, {8, 0, kZc, 1}},
+    {{.x = 0, .y = 0, .z = kZc, .f = 1},  {.x = 6, .y = 0, .z = kZt, .f = 1},  {.x = 6, .y = 8, .z = kZt, .f = 1},  {.x = 0, .y = 8, .z = kZc, .f = 1}},
+    {{.x = 0, .y = 8, .z = kZc, .f = 1},  {.x = 6, .y = 8, .z = kZt, .f = 1},  {.x = 14, .y = 0, .z = kZt, .f = 1}, {.x = 8, .y = 0, .z = kZc, .f = 1}},
+    {{.x = 8, .y = 0, .z = kZc, .f = 1},  {.x = 14, .y = 0, .z = kZt, .f = 1}, {.x = 6, .y = 0, .z = kZt, .f = 1},  {.x = 0, .y = 0, .z = kZc, .f = 1}},
+    {{.x = 14, .y = 0, .z = kZt, .f = 1}, {.x = 6, .y = 8, .z = kZt, .f = 1},  {.x = 6, .y = 0, .z = kZt, .f = 1},  {.x = 6, .y = 0, .z = kZt, .f = 1}},
+    {{.x = 0, .y = 0, .z = kZc, .f = 1},  {.x = 0, .y = 8, .z = kZc, .f = 1},  {.x = 8, .y = 0, .z = kZc, .f = 1},  {.x = 8, .y = 0, .z = kZc, .f = 1}},
 };
 
 // Test 3: mirrored, path A.
 const Scr kTest3Quads[kSdwQuadCount][4] = {
-    {{0, 0, kZc, 1}, {6, 0, kZt, 1}, {-2, 0, kZt, 1}, {-8, 0, kZc, 1}},
-    {{-8, 0, kZc, 1}, {-2, 0, kZt, 1}, {6, 8, kZt, 1}, {0, 8, kZc, 1}},
-    {{0, 8, kZc, 1}, {6, 8, kZt, 1}, {6, 0, kZt, 1}, {0, 0, kZc, 1}},
-    {{6, 8, kZt, 1}, {-2, 0, kZt, 1}, {6, 0, kZt, 1}, {6, 0, kZt, 1}},
-    {{0, 0, kZc, 1}, {-8, 0, kZc, 1}, {0, 8, kZc, 1}, {0, 8, kZc, 1}},
+    {{.x = 0, .y = 0, .z = kZc, .f = 1},  {.x = 6, .y = 0, .z = kZt, .f = 1},  {.x = -2, .y = 0, .z = kZt, .f = 1}, {.x = -8, .y = 0, .z = kZc, .f = 1}},
+    {{.x = -8, .y = 0, .z = kZc, .f = 1}, {.x = -2, .y = 0, .z = kZt, .f = 1}, {.x = 6, .y = 8, .z = kZt, .f = 1},  {.x = 0, .y = 8, .z = kZc, .f = 1} },
+    {{.x = 0, .y = 8, .z = kZc, .f = 1},  {.x = 6, .y = 8, .z = kZt, .f = 1},  {.x = 6, .y = 0, .z = kZt, .f = 1},  {.x = 0, .y = 0, .z = kZc, .f = 1} },
+    {{.x = 6, .y = 8, .z = kZt, .f = 1},  {.x = -2, .y = 0, .z = kZt, .f = 1}, {.x = 6, .y = 0, .z = kZt, .f = 1},  {.x = 6, .y = 0, .z = kZt, .f = 1} },
+    {{.x = 0, .y = 0, .z = kZc, .f = 1},  {.x = -8, .y = 0, .z = kZc, .f = 1}, {.x = 0, .y = 8, .z = kZc, .f = 1},  {.x = 0, .y = 8, .z = kZc, .f = 1} },
 };
 
-}  // namespace
+} // namespace
 
 TEST(Vu1SdwGeom, Test1_LightPrepare) {
     const SdwLight light = SdwPrepare(CommonParams());
-    ExpectVecNear(light.a_hat, {0.6f, 0, -0.8f, 0});
-    ExpectVecNear(light.lc, {-0.06f, 0, 0.08f, 0});
+    ExpectVecNear(light.a_hat, {.x = 0.6f, .y = 0, .z = -0.8f, .w = 0});
+    ExpectVecNear(light.lc, {.x = -0.06f, .y = 0, .z = 0.08f, .w = 0});
     EXPECT_FALSE(light.mirrored);
 }
 
 TEST(Vu1SdwGeom, Test1_Intermediates) {
-    const SdwParams p = CommonParams();
-    const SdwLight light = SdwPrepare(p);
+    const SdwParams   p = CommonParams();
+    const SdwLight    light = SdwPrepare(p);
     const SdwTriangle tri =
-        SdwExtrude(p, light, {0, 0, 0.5f, 1}, {0.5f, 0, 0.5f, 1}, {0, 0.5f, 0.5f, 1});
+        SdwExtrude(p, light, {.x = 0, .y = 0, .z = 0.5f, .w = 1}, {.x = 0.5f, .y = 0, .z = 0.5f, .w = 1}, {.x = 0, .y = 0.5f, .z = 0.5f, .w = 1});
 
     EXPECT_EQ(tri.reject, SdwReject::None);
-    ExpectVecNear(tri.c[0], {0, 0, 0.5f, 1});
-    ExpectVecNear(tri.c[1], {0.5f, 0, 0.5f, 1});
-    ExpectVecNear(tri.c[2], {0, 0.5f, 0.5f, 1});
-    ExpectVecNear(tri.t[0], {0.375f, 0, 0, 1});
-    ExpectVecNear(tri.t[1], {0.875f, 0, 0, 1});
-    ExpectVecNear(tri.t[2], {0.375f, 0.5f, 0, 1});
-    ExpectVecNear(tri.e1, {0.5f, 0, 0, 0});
-    ExpectVecNear(tri.e2, {0, 0.5f, 0, 0});
-    ExpectVecNear(tri.n, {0, 0, -0.25f, 0});
+    ExpectVecNear(tri.c[0], {.x = 0, .y = 0, .z = 0.5f, .w = 1});
+    ExpectVecNear(tri.c[1], {.x = 0.5f, .y = 0, .z = 0.5f, .w = 1});
+    ExpectVecNear(tri.c[2], {.x = 0, .y = 0.5f, .z = 0.5f, .w = 1});
+    ExpectVecNear(tri.t[0], {.x = 0.375f, .y = 0, .z = 0, .w = 1});
+    ExpectVecNear(tri.t[1], {.x = 0.875f, .y = 0, .z = 0, .w = 1});
+    ExpectVecNear(tri.t[2], {.x = 0.375f, .y = 0.5f, .z = 0, .w = 1});
+    ExpectVecNear(tri.e1, {.x = 0.5f, .y = 0, .z = 0, .w = 0});
+    ExpectVecNear(tri.e2, {.x = 0, .y = 0.5f, .z = 0, .w = 0});
+    ExpectVecNear(tri.n, {.x = 0, .y = 0, .z = -0.25f, .w = 0});
     EXPECT_NEAR(tri.q, -0.02f, kTol);
     EXPECT_EQ(tri.path, SdwPath::B);
 }
@@ -140,9 +142,9 @@ TEST(Vu1SdwGeom, Test1_QuadsScreenSignsAndKicks) {
     // Open point 12: quad 0 is zero-area (zsign 0) and is emitted as ADD.
     // Open point 13: Z is not clamped; every Z here is inside [0, 2^24).
     // Open point 16: F uses S.w = w * (1/w) with no truncation correction; w = 1 here.
-    const SdwParams p = CommonParams();
+    const SdwParams   p = CommonParams();
     const SdwTriangle tri =
-        SdwExtrude(p, SdwPrepare(p), {0, 0, 0.5f, 1}, {0.5f, 0, 0.5f, 1}, {0, 0.5f, 0.5f, 1});
+        SdwExtrude(p, SdwPrepare(p), {.x = 0, .y = 0, .z = 0.5f, .w = 1}, {.x = 0.5f, .y = 0, .z = 0.5f, .w = 1}, {.x = 0, .y = 0.5f, .z = 0.5f, .w = 1});
 
     for (uint32_t g = 0; g < kSdwQuadCount; ++g) {
         ExpectQuad(tri.quads[g], kTest1Quads[g]);
@@ -164,21 +166,21 @@ TEST(Vu1SdwGeom, Test1_QuadsScreenSignsAndKicks) {
 }
 
 TEST(Vu1SdwGeom, Test2_Intermediates) {
-    const SdwParams p = CommonParams();
-    const SdwLight light = SdwPrepare(p);
+    const SdwParams   p = CommonParams();
+    const SdwLight    light = SdwPrepare(p);
     const SdwTriangle tri =
-        SdwExtrude(p, light, {0, 0, 0.5f, 1}, {0, 0.5f, 0.5f, 1}, {0.5f, 0, 0.5f, 1});
+        SdwExtrude(p, light, {.x = 0, .y = 0, .z = 0.5f, .w = 1}, {.x = 0, .y = 0.5f, .z = 0.5f, .w = 1}, {.x = 0.5f, .y = 0, .z = 0.5f, .w = 1});
 
     EXPECT_EQ(tri.reject, SdwReject::None);
-    ExpectVecNear(tri.c[0], {0, 0, 0.5f, 1});
-    ExpectVecNear(tri.c[1], {0, 0.5f, 0.5f, 1});
-    ExpectVecNear(tri.c[2], {0.5f, 0, 0.5f, 1});
-    ExpectVecNear(tri.t[0], {0.375f, 0, 0, 1});
-    ExpectVecNear(tri.t[1], {0.375f, 0.5f, 0, 1});
-    ExpectVecNear(tri.t[2], {0.875f, 0, 0, 1});
-    ExpectVecNear(tri.e1, {0, 0.5f, 0, 0});
-    ExpectVecNear(tri.e2, {0.5f, 0, 0, 0});
-    ExpectVecNear(tri.n, {0, 0, 0.25f, 0});
+    ExpectVecNear(tri.c[0], {.x = 0, .y = 0, .z = 0.5f, .w = 1});
+    ExpectVecNear(tri.c[1], {.x = 0, .y = 0.5f, .z = 0.5f, .w = 1});
+    ExpectVecNear(tri.c[2], {.x = 0.5f, .y = 0, .z = 0.5f, .w = 1});
+    ExpectVecNear(tri.t[0], {.x = 0.375f, .y = 0, .z = 0, .w = 1});
+    ExpectVecNear(tri.t[1], {.x = 0.375f, .y = 0.5f, .z = 0, .w = 1});
+    ExpectVecNear(tri.t[2], {.x = 0.875f, .y = 0, .z = 0, .w = 1});
+    ExpectVecNear(tri.e1, {.x = 0, .y = 0.5f, .z = 0, .w = 0});
+    ExpectVecNear(tri.e2, {.x = 0.5f, .y = 0, .z = 0, .w = 0});
+    ExpectVecNear(tri.n, {.x = 0, .y = 0, .z = 0.25f, .w = 0});
     EXPECT_NEAR(tri.q, 0.02f, kTol);
     EXPECT_EQ(tri.path, SdwPath::A);
 }
@@ -186,9 +188,9 @@ TEST(Vu1SdwGeom, Test2_Intermediates) {
 TEST(Vu1SdwGeom, Test2_QuadsScreenSignsAndKicks) {
     // Open point 12: quad 2 is zero-area (zsign 0) and is emitted as ADD.
     // Open point 13 and 16: as in Test1_QuadsScreenSignsAndKicks.
-    const SdwParams p = CommonParams();
+    const SdwParams   p = CommonParams();
     const SdwTriangle tri =
-        SdwExtrude(p, SdwPrepare(p), {0, 0, 0.5f, 1}, {0, 0.5f, 0.5f, 1}, {0.5f, 0, 0.5f, 1});
+        SdwExtrude(p, SdwPrepare(p), {.x = 0, .y = 0, .z = 0.5f, .w = 1}, {.x = 0, .y = 0.5f, .z = 0.5f, .w = 1}, {.x = 0.5f, .y = 0, .z = 0.5f, .w = 1});
 
     for (uint32_t g = 0; g < kSdwQuadCount; ++g) {
         ExpectQuad(tri.quads[g], kTest2Quads[g]);
@@ -211,27 +213,27 @@ TEST(Vu1SdwGeom, Test2_QuadsScreenSignsAndKicks) {
 
 TEST(Vu1SdwGeom, Test3_LightPrepareMirrored) {
     const SdwLight light = SdwPrepare(MirroredParams());
-    ExpectVecNear(light.a_hat, {-0.6f, 0, -0.8f, 0});
-    ExpectVecNear(light.lc, {-0.06f, 0, 0.08f, 0});
+    ExpectVecNear(light.a_hat, {.x = -0.6f, .y = 0, .z = -0.8f, .w = 0});
+    ExpectVecNear(light.lc, {.x = -0.06f, .y = 0, .z = 0.08f, .w = 0});
     EXPECT_TRUE(light.mirrored);
 }
 
 TEST(Vu1SdwGeom, Test3_Intermediates) {
-    const SdwParams p = MirroredParams();
-    const SdwLight light = SdwPrepare(p);
+    const SdwParams   p = MirroredParams();
+    const SdwLight    light = SdwPrepare(p);
     const SdwTriangle tri =
-        SdwExtrude(p, light, {0, 0, 0.5f, 1}, {0.5f, 0, 0.5f, 1}, {0, 0.5f, 0.5f, 1});
+        SdwExtrude(p, light, {.x = 0, .y = 0, .z = 0.5f, .w = 1}, {.x = 0.5f, .y = 0, .z = 0.5f, .w = 1}, {.x = 0, .y = 0.5f, .z = 0.5f, .w = 1});
 
     EXPECT_EQ(tri.reject, SdwReject::None);
-    ExpectVecNear(tri.c[0], {0, 0, 0.5f, 1});
-    ExpectVecNear(tri.c[1], {-0.5f, 0, 0.5f, 1});
-    ExpectVecNear(tri.c[2], {0, 0.5f, 0.5f, 1});
-    ExpectVecNear(tri.t[0], {0.375f, 0, 0, 1});
-    ExpectVecNear(tri.t[1], {-0.125f, 0, 0, 1});
-    ExpectVecNear(tri.t[2], {0.375f, 0.5f, 0, 1});
-    ExpectVecNear(tri.e1, {-0.5f, 0, 0, 0});
-    ExpectVecNear(tri.e2, {0, 0.5f, 0, 0});
-    ExpectVecNear(tri.n, {0, 0, 0.25f, 0});
+    ExpectVecNear(tri.c[0], {.x = 0, .y = 0, .z = 0.5f, .w = 1});
+    ExpectVecNear(tri.c[1], {.x = -0.5f, .y = 0, .z = 0.5f, .w = 1});
+    ExpectVecNear(tri.c[2], {.x = 0, .y = 0.5f, .z = 0.5f, .w = 1});
+    ExpectVecNear(tri.t[0], {.x = 0.375f, .y = 0, .z = 0, .w = 1});
+    ExpectVecNear(tri.t[1], {.x = -0.125f, .y = 0, .z = 0, .w = 1});
+    ExpectVecNear(tri.t[2], {.x = 0.375f, .y = 0.5f, .z = 0, .w = 1});
+    ExpectVecNear(tri.e1, {.x = -0.5f, .y = 0, .z = 0, .w = 0});
+    ExpectVecNear(tri.e2, {.x = 0, .y = 0.5f, .z = 0, .w = 0});
+    ExpectVecNear(tri.n, {.x = 0, .y = 0, .z = 0.25f, .w = 0});
     EXPECT_NEAR(tri.q, 0.02f, kTol);
     EXPECT_EQ(tri.path, SdwPath::A);
 }
@@ -239,9 +241,9 @@ TEST(Vu1SdwGeom, Test3_Intermediates) {
 TEST(Vu1SdwGeom, Test3_QuadsScreenSignsAndKicks) {
     // Open point 12: quad 0 is zero-area (zsign -0.0, not negative) and is emitted as ADD.
     // Open point 13 and 16: as in Test1_QuadsScreenSignsAndKicks.
-    const SdwParams p = MirroredParams();
+    const SdwParams   p = MirroredParams();
     const SdwTriangle tri =
-        SdwExtrude(p, SdwPrepare(p), {0, 0, 0.5f, 1}, {0.5f, 0, 0.5f, 1}, {0, 0.5f, 0.5f, 1});
+        SdwExtrude(p, SdwPrepare(p), {.x = 0, .y = 0, .z = 0.5f, .w = 1}, {.x = 0.5f, .y = 0, .z = 0.5f, .w = 1}, {.x = 0, .y = 0.5f, .z = 0.5f, .w = 1});
 
     for (uint32_t g = 0; g < kSdwQuadCount; ++g) {
         ExpectQuad(tri.quads[g], kTest3Quads[g]);
@@ -266,17 +268,17 @@ TEST(Vu1SdwGeom, Test3_QuadsScreenSignsAndKicks) {
 // C1.x = V1.x, so V1.x = 1.5 puts C1 outside |w|; T1.x = V1.x + 0.75 * V1.z = 1.275 puts T1
 // outside |w| while C1 stays inside.
 TEST(Vu1SdwGeom, CClipRejectsWholeTriangle) {
-    const SdwParams p = CommonParams();
+    const SdwParams   p = CommonParams();
     const SdwTriangle tri =
-        SdwExtrude(p, SdwPrepare(p), {0, 0, 0.5f, 1}, {1.5f, 0, 0.5f, 1}, {0, 0.5f, 0.5f, 1});
+        SdwExtrude(p, SdwPrepare(p), {.x = 0, .y = 0, .z = 0.5f, .w = 1}, {.x = 1.5f, .y = 0, .z = 0.5f, .w = 1}, {.x = 0, .y = 0.5f, .z = 0.5f, .w = 1});
     EXPECT_EQ(tri.reject, SdwReject::CClip);
     EXPECT_TRUE(tri.kicks.empty());
 }
 
 TEST(Vu1SdwGeom, TClipRejectsWholeTriangle) {
-    const SdwParams p = CommonParams();
+    const SdwParams   p = CommonParams();
     const SdwTriangle tri =
-        SdwExtrude(p, SdwPrepare(p), {0, 0, 0.5f, 1}, {0.9f, 0, 0.5f, 1}, {0, 0.5f, 0.5f, 1});
+        SdwExtrude(p, SdwPrepare(p), {.x = 0, .y = 0, .z = 0.5f, .w = 1}, {.x = 0.9f, .y = 0, .z = 0.5f, .w = 1}, {.x = 0, .y = 0.5f, .z = 0.5f, .w = 1});
     EXPECT_EQ(tri.reject, SdwReject::TClip);
     EXPECT_TRUE(tri.kicks.empty());
 }
@@ -284,9 +286,9 @@ TEST(Vu1SdwGeom, TClipRejectsWholeTriangle) {
 // Light (3,0,0): A = (3,0,0), Ahat = (1,0,0), Lc = (-0.1,0,0). N = (0,0,-0.25) gives Q = 0.
 TEST(Vu1SdwGeom, GrazingRejectsZeroFacing) {
     SdwParams p = CommonParams();
-    p.light = {3, 0, 0, 0};
+    p.light = {.x = 3, .y = 0, .z = 0, .w = 0};
     const SdwTriangle tri =
-        SdwExtrude(p, SdwPrepare(p), {0, 0, 0.5f, 1}, {0.5f, 0, 0.5f, 1}, {0, 0.5f, 0.5f, 1});
+        SdwExtrude(p, SdwPrepare(p), {.x = 0, .y = 0, .z = 0.5f, .w = 1}, {.x = 0.5f, .y = 0, .z = 0.5f, .w = 1}, {.x = 0, .y = 0.5f, .z = 0.5f, .w = 1});
     EXPECT_EQ(tri.reject, SdwReject::Grazing);
     EXPECT_NEAR(tri.q, 0.0f, kTol);
     EXPECT_TRUE(tri.kicks.empty());
@@ -301,8 +303,7 @@ TEST(Vu1SdwGeom, KickOrder_AllFrontHasNoSubBlock) {
                                            Add()}));
 }
 
-// Open point 6: back quads are dropped when F = 0 (6.5, trace-confirmed); reading implemented
-// as the trace shows, not as intended behaviour.
+// Open point 6: back quads are dropped when F = 0 (6.5). This follows retail, not the apparent intent.
 TEST(Vu1SdwGeom, KickOrder_AllBackDropsBackQuads) {
     const std::vector<SdwKick> kicks = SdwKickOrder({true, true, true, true, true});
     EXPECT_EQ(kicks, (std::vector<SdwKick>{Add()}));
@@ -314,4 +315,4 @@ TEST(Vu1SdwGeom, KickOrder_OneFrontFourBack) {
                                            Quad(3), Quad(4), Sub()}));
 }
 
-}  // namespace dc::vu1
+} // namespace dc::vu1

@@ -69,7 +69,7 @@ void SetRotationZ(float (*m)[4], float angle) {
 
 // The palette stores each bone transposed, so its row r is column r of the matrix.
 void ExpectSlotMatches(int slot, const float (*expected)[4]) {
-    const float (*bone)[4] = mgVisualPortCurrentProg0().bones[slot];
+    const float (*bone)[4] = mgVisualPortCurrentPalette().bones[slot];
     for (int row = 0; row < 3; ++row) {
         for (int col = 0; col < 4; ++col) {
             EXPECT_NEAR(bone[row][col], expected[col][row], kTol)
@@ -78,11 +78,12 @@ void ExpectSlotMatches(int slot, const float (*expected)[4]) {
     }
 }
 
-// CreateRenderInfoPacket resets the palette to identity before CreateExtRenderInfoPacket writes it. Unused and
-// NULL-frame rows keep that reset, so each test starts from the same state.
+// CreateRenderInfoPacket fills a skinned record's palette with identity before CreateExtRenderInfoPacket writes it.
+// These tests call the latter directly, so they reset the palette themselves. Unused and NULL-frame rows keep that
+// reset, so each test starts from the same state.
 void ResetPalette() {
-    gfx::Prog0Constants &prog0 = mgVisualPortCurrentProg0();
-    for (auto &bone : prog0.bones) {
+    gfx::Prog0Palette &palette = mgVisualPortCurrentPalette();
+    for (auto &bone : palette.bones) {
         for (int row = 0; row < 3; ++row) {
             for (int col = 0; col < 4; ++col) {
                 bone[row][col] = row == col ? 1.0f : 0.0f;
@@ -91,23 +92,29 @@ void ResetPalette() {
     }
 }
 
-void PlaceFrame(mgCFrame &frame, float (*world)[4]) {
-    frame.SetTransMatrix(world);
-}
-
 // The bone's local transform is applied before the object's, so its world matrix is local * object.
 void PoseBone(mgCFrame &bone, float (*local)[4], float (*object)[4]) {
     float world[4][4];
     Product(world, local, object);
-    PlaceFrame(bone, world);
+    bone.SetTransMatrix(world);
 }
 
 } // namespace
 
 TEST(VisualMotion, SkinnedFaceInterleavesSkin) {
-    sceVu0FVECTOR positions[3] = {{0.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 0.0f, 1.0f}};
-    sceVu0FVECTOR normals[1] = {{0.0f, 0.0f, 1.0f, 0.0f}};
-    sceVu0FVECTOR uvs[3] = {{0.0f, 0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f, 0.0f}};
+    sceVu0FVECTOR positions[3] = {
+        {0.0f, 0.0f, 0.0f, 1.0f},
+        {1.0f, 0.0f, 0.0f, 1.0f},
+        {0.0f, 1.0f, 0.0f, 1.0f}
+    };
+    sceVu0FVECTOR normals[1] = {
+        {0.0f, 0.0f, 1.0f, 0.0f}
+    };
+    sceVu0FVECTOR uvs[3] = {
+        {0.0f, 0.0f, 0.0f, 0.0f},
+        {1.0f, 0.0f, 0.0f, 0.0f},
+        {0.0f, 1.0f, 0.0f, 0.0f}
+    };
 
     mgVertexWeight weights[3];
     for (int p = 0; p < 3; ++p) {
@@ -128,7 +135,7 @@ TEST(VisualMotion, SkinnedFaceInterleavesSkin) {
     visual.weight_num = 3;
 
     // Per corner: position, normal, texture coordinate.
-    int corner_streams[9] = {2, 0, 0, 0, 0, 1, 1, 0, 2};
+    int     corner_streams[9] = {2, 0, 0, 0, 0, 1, 1, 0, 2};
     mgCFace face{};
     face.type = static_cast<u_short>(MG_PRIM_TRIANGLE);
     face.index_stride = 3;
@@ -150,7 +157,7 @@ TEST(VisualMotion, SkinnedFaceInterleavesSkin) {
             EXPECT_FLOAT_EQ(mesh.vertices[2 * c].position[i], positions[position][i]);
         }
 
-        gfx::Prog0Skin skin;
+        gfx::Prog0Skin skin{};
         std::memcpy(&skin, &mesh.vertices[2 * c + 1], sizeof skin);
         for (int k = 0; k < 4; ++k) {
             EXPECT_EQ(static_cast<int>(skin.bone[k]), 4 * position + k);
@@ -170,8 +177,8 @@ TEST(VisualMotion, PaletteIsModelSpace) {
     float root_world[4][4];
     SetTranslation(root_world, 5.0f, 0.0f, 0.0f);
     mgCFrame root;
-    PlaceFrame(root, root_world);
-    mgCFrame bone;
+    root.SetTransMatrix(root_world);
+    mgCFrame  bone;
     mgCFrame *frames[2] = {&root, &bone};
 
     mgCVisualMotionMDT visual;
@@ -197,7 +204,7 @@ TEST(VisualMotion, PaletteIsModelSpace) {
     ResetPalette();
     visual.CreateExtRenderInfoPacket(nullptr, object_a, &mgRenderInfo);
     ExpectSlotMatches(0, bone_local);
-    EXPECT_NEAR(mgVisualPortCurrentProg0().bones[0][1][3], 2.0f, kTol);
+    EXPECT_NEAR(mgVisualPortCurrentPalette().bones[0][1][3], 2.0f, kTol);
 
     PoseBone(bone, bone_local, object_b);
     ResetPalette();
@@ -238,9 +245,9 @@ TEST(VisualMotion, UnusedSlotsAreIdentity) {
     float identity[4][4];
     SetIdentity(identity);
     mgCFrame root;
-    PlaceFrame(root, identity);
+    root.SetTransMatrix(identity);
     mgCFrame bone;
-    PlaceFrame(bone, bone_world);
+    bone.SetTransMatrix(bone_world);
     mgCFrame *frames[3] = {&root, &bone, nullptr};
 
     mgCVisualMotionMDT visual;
@@ -287,9 +294,9 @@ TEST(VisualMotion, MatchesRetailAlgebra) {
     Product(object, rotation, translation);
 
     mgCFrame root;
-    PlaceFrame(root, root_world);
+    root.SetTransMatrix(root_world);
     mgCFrame bone;
-    PlaceFrame(bone, bone_world);
+    bone.SetTransMatrix(bone_world);
     mgCFrame *frames[2] = {&root, &bone};
 
     mgCVisualMotionMDT visual;

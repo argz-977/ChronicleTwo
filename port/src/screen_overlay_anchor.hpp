@@ -8,7 +8,7 @@ struct ScreenOverlayAnchor {
     unsigned long long generation = 0;
     bool               valid = false;
 
-    bool Update(int, int) {
+    bool Update(int /*unused*/, int /*unused*/) {
         const auto next = mgPortCameraGeneration();
         const bool cut = valid && generation != next;
         generation = next;

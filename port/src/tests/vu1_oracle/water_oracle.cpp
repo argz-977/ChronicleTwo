@@ -13,7 +13,7 @@ WaterVertex WaterTransform(const WaterParams& params, Vec4 pos, Vec4 slope,
     constexpr float kFadeB = -0.25f;
     constexpr float kAdcBias = 2048.0f;
 
-    const Vec4 clip = Mul(params.r, Vec4{pos.x, pos.y * params.p0, pos.z, 1.0f});
+    const Vec4  clip = Mul(params.r, Vec4{.x = pos.x, .y = pos.y * params.p0, .z = pos.z, .w = 1.0f});
     const float q = 1.0f / clip.w;
     const float xw = clip.x * q;
     const float yw = clip.y * q;
@@ -46,7 +46,7 @@ WaterVertex WaterTransform(const WaterParams& params, Vec4 pos, Vec4 slope,
 
     // Open point 9.5: Z is bits 27..4 of FTOI4(zw), 24 bits wide.
     // Open point 9.2: X/Y keep the low 16 bits of a 32-bit FTOI4; ADC is bit 15 of the fog word.
-    const uint32_t fog_word = static_cast<uint32_t>(Ftoi4(fog));
+    const auto fog_word = static_cast<uint32_t>(Ftoi4(fog));
 
     WaterVertex out{};
     out.r = Ftoi0(params.colour.x);

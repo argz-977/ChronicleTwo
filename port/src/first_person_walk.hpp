@@ -1,8 +1,11 @@
 #pragma once
+
 #include "platform/input.hpp"
+
 class CScene;
 class CPadControl;
 class CCameraControl;
+
 // Map keyboard movement to the retail camera-relative stick without changing its camera.
 InputKeyboardMovement FirstPersonWalkStick(InputKeyboardMovement keys, float heading, float camera_angle);
 // Keep the third-person entry offset through collision-accepted eye-view movement.

@@ -61,16 +61,16 @@ TEST(OutlineDrawBox, ClampsToTheWiderFillExtent) {
 }
 
 TEST(OutlinePaddedBox, OutsetsByEightPixels) {
-    const OutlineBox box{168, 324, 1600, 3212};
+    const OutlineBox box{.left = 168, .top = 324, .right = 1600, .bottom = 3212};
     ExpectBox(OutlinePaddedBox(box, Screen()), 40, 196, 1728, 3340);
 }
 
 TEST(OutlinePaddedBox, ClampsToTheScreenExtent) {
-    const OutlineBox box{0, 0, 512 * 16, 480 * 16};
+    const OutlineBox box{.left = 0, .top = 0, .right = 512 * 16, .bottom = 480 * 16};
     ExpectBox(OutlinePaddedBox(box, Screen()), 0, 0, 512 * 16, 480 * 16);
 }
 
 TEST(OutlinePaddedBox, ClampsToTheFillExtent) {
-    const OutlineBox box{-40 * 16, 0, 552 * 16, 480 * 16};
+    const OutlineBox box{.left = -40 * 16, .top = 0, .right = 552 * 16, .bottom = 480 * 16};
     ExpectBox(OutlinePaddedBox(box, Fill()), -40 * 16, 0, 552 * 16, 480 * 16);
 }

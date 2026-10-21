@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
 
-#include <cstring>
 #include <memory>
 
 #include "dng_main.hpp"
@@ -49,7 +48,7 @@ TEST(EffectVector, CharacterGettersAndMissingEntryFallbackPreserveCoordinates) {
     for (auto &entry : character.entry_frame) {
         entry = nullptr;
     }
-    auto previous = now_scene;
+    auto *previous = now_scene;
     now_scene = scene.get();
     scene->chara_num = 1;
     scene->chara[0].status = SCENE_DATA_ASSIGNED;

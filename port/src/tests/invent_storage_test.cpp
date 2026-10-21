@@ -31,7 +31,8 @@ TEST(InventStorage, NativeRecipesAndMaterialsOutgrowTheRetailMenuSlot) {
 }
 
 TEST(InventStorage, LoadingAnotherManagerPreservesExistingRecipePointers) {
-    CInventDataManage first, second;
+    CInventDataManage first;
+    CInventDataManage second;
     std::string       script = "DATATABLESET 1; DATASET 42,1,2,3,210,5,0,1.0,2.0,3.0,4.0;";
     ASSERT_TRUE(first.LoadAnalyzeInventFile(script.data(), script.size()));
     auto *recipe = first.table;

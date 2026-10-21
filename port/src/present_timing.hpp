@@ -19,9 +19,9 @@ public:
         Clock::time_point deadline;
     };
 
-    Decision Next(Clock::time_point now, Clock::time_point next_tick, double max_fps) const {
+    [[nodiscard]] Decision Next(Clock::time_point now, Clock::time_point next_tick, double max_fps) const {
         if (now >= next_tick) {
-            return {Action::Tick, next_tick};
+            return {.action = Action::Tick, .deadline = next_tick};
         }
         if (std::isfinite(max_fps) && max_fps > 0.0) {
             const auto period = std::chrono::duration_cast<Clock::duration>(
@@ -31,11 +31,11 @@ public:
                                  : last_start_ + period;
             if (now < due) {
                 // Even a tick with no display yet must yield to the simulation deadline.
-                return due >= next_tick ? Decision{Action::Tick, next_tick}
-                                        : Decision{Action::Wait, due};
+                return due >= next_tick ? Decision{.action = Action::Tick, .deadline = next_tick}
+                                        : Decision{.action = Action::Wait, .deadline = due};
             }
         }
-        return {Action::Display, now};
+        return {.action = Action::Display, .deadline = now};
     }
 
     template <class Render, class Now>
@@ -51,7 +51,7 @@ public:
     }
 
 private:
-    Clock::time_point last_start_{};
+    Clock::time_point last_start_;
 };
 
 inline float PresentFrameAlpha(double elapsed_fields, double fractional_field, int frame_fields) {

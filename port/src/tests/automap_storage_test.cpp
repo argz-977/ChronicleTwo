@@ -7,7 +7,7 @@
 #include "scenesnd.hpp"
 
 TEST(AutoMapStorage, MiniMapUsesTheEmptyNameTerminatorInThePartTable) {
-    DNG_BATTLE_AREA area;
+    DNG_BATTLE_AREA area{};
     auto           *previous = BattleAreaScene;
     BattleAreaScene = &area;
     std::strcpy(area.map_name, "d01f01");

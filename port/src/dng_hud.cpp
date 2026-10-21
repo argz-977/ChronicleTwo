@@ -1,5 +1,7 @@
 #include "common.h"
 
+#include <math.h>
+
 #include "actionchara.hpp"
 #include "character.hpp"
 #include "dng_hud.hpp"
@@ -24,22 +26,22 @@ PORT_OVERRIDE void CWarningGage2::Draw() {
     };
 
     constexpr WarningIcon human_label[] = {
-        {183, 41, 68, 20, 316, 236},
-        {274, 64, 68, 20, 316, 236},
-        {411, 73, 68, 20, 316, 236}
+        {.x = 183, .y = 41, .width = 68, .height = 20, .u = 316, .v = 236},
+        {.x = 274, .y = 64, .width = 68, .height = 20, .u = 316, .v = 236},
+        {.x = 411, .y = 73, .width = 68, .height = 20, .u = 316, .v = 236}
     };
     constexpr WarningIcon human_icon[] = {
-        {170, 16, 28, 36, 210, 226},
-        {302, 15, 26, 54, 290, 202},
-        {439, 56, 26, 22, 238, 234}
+        {.x = 170, .y = 16, .width = 28, .height = 36, .u = 210, .v = 226},
+        {.x = 302, .y = 15, .width = 26, .height = 54, .u = 290, .v = 202},
+        {.x = 439, .y = 56, .width = 26, .height = 22, .u = 238, .v = 234}
     };
     constexpr WarningIcon robot_label[] = {
-        {146, 38, 68, 20, 316, 236},
-        {320, 33, 68, 20, 316, 236}
+        {.x = 146, .y = 38, .width = 68, .height = 20, .u = 316, .v = 236},
+        {.x = 320, .y = 33, .width = 68, .height = 20, .u = 316, .v = 236}
     };
     constexpr WarningIcon robot_icon[] = {
-        {133, 13, 28, 36, 210, 226},
-        {348, 16, 26, 22, 238, 234}
+        {.x = 133, .y = 13, .width = 28, .height = 36, .u = 210, .v = 226},
+        {.x = 348, .y = 16, .width = 26, .height = 22, .u = 238, .v = 234}
     };
     const bool human = layout == WARNING_GAGE_LAYOUT_MAIN;
     if (!human && layout != WARNING_GAGE_LAYOUT_ROBO) {
@@ -76,28 +78,28 @@ PORT_OVERRIDE int CLockOnModel::Draw() {
     int   top_left[4];
     int   bottom_right[4];
 
-    CActionChara *player = (CActionChara *) scene->GetCharacter(0);
+    auto *player = static_cast<CActionChara *>(scene->GetCharacter(0));
 
-    if (player == NULL) {
+    if (player == nullptr) {
         mgPortHideTarget(this);
         return 0;
     }
 
-    name = NULL;
+    name = nullptr;
 
     if (player->target_no == -1) {
         mgPortHideTarget(this);
         return 0;
     }
 
-    CActiveMonster *target = (CActiveMonster *) scene->GetCharacter(player->target_no);
+    auto *target = static_cast<CActiveMonster *>(scene->GetCharacter(player->target_no));
 
-    if (target == NULL) {
+    if (target == nullptr) {
         mgPortHideTarget(this);
         return 0;
     }
 
-    float size;
+    float size = NAN;
     float height = target->body_height;
 
     if (!(target->target_dist <= target->clip_dist)) {
@@ -112,7 +114,7 @@ PORT_OVERRIDE int CLockOnModel::Draw() {
 
     CHARA_ENTRY_OBJECT *entry = target->GetEntryObjectPos(CHARA_ENTRY_GROUP_TARGET, 0, target_pos);
 
-    if (entry == NULL) {
+    if (entry == nullptr) {
         mgPortHideTarget(this);
         return 0;
     }
@@ -154,8 +156,8 @@ PORT_OVERRIDE int CLockOnModel::Draw() {
     }
 
     gfx::Interp2DScope interpolation(mgPortTargetBrackets(this));
-    CPreSprite prim;
-    prim.Initialize(NULL, NULL);
+    CPreSprite         prim;
+    prim.Initialize(nullptr, nullptr);
     prim.Preset2D();
     prim.Coord(1);
     prim.Begin(MG_PRIM_SPRITE);

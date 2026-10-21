@@ -1,5 +1,6 @@
 #include "common.h"
 
+#include <algorithm>
 #include <cmath>
 
 #include "mg_drawprim.hpp"
@@ -9,11 +10,11 @@
 #include "mglib.hpp"
 #include "mglib_port.hpp"
 
-PORT_OVERRIDE void mgCTextureAnime::TexAnime(int texb, sceVif1Packet *) {
-    int                     i;
-    int                     group;
-    CList<mgCTexAnimeData> *node;
-    mgCTexAnimeData        *data;
+PORT_OVERRIDE void mgCTextureAnime::TexAnime(int texb, sceVif1Packet * /*unused*/) {
+    int                     i = 0;
+    int                     group = 0;
+    CList<mgCTexAnimeData> *node = nullptr;
+    mgCTexAnimeData        *data = nullptr;
 
     // TEXFLUSH has no PC counterpart: the renderer keeps no texture cache to invalidate.
     // TA0 = TA1 = 0x80: alpha of 24-bit and 16-bit texels.
@@ -23,10 +24,10 @@ PORT_OVERRIDE void mgCTextureAnime::TexAnime(int texb, sceVif1Packet *) {
         if (enable[i] != 0) {
             CList<mgCTexAnimeData> *linked_node = now[i];
 
-            if (linked_node != NULL) {
+            if (linked_node != nullptr) {
                 mgCTexAnimeData *linked_data = linked_node->pGetData();
 
-                if (linked_data != NULL && linked_data->link_group >= 0) {
+                if (linked_data != nullptr && linked_data->link_group >= 0) {
                     Enable(linked_data->link_group);
                 }
             }
@@ -34,7 +35,7 @@ PORT_OVERRIDE void mgCTextureAnime::TexAnime(int texb, sceVif1Packet *) {
     }
 
     mgCDrawPrim prim;
-    prim.Initialize(NULL, NULL);
+    prim.Initialize(nullptr, nullptr);
     prim.DepthTestEnable(0);
     prim.ZMask(MG_Z_MASK_MASKED);
     prim.DepthTest(MG_DEPTH_TEST_ALWAYS);
@@ -45,14 +46,14 @@ PORT_OVERRIDE void mgCTextureAnime::TexAnime(int texb, sceVif1Packet *) {
             continue;
         }
 
-        if (now[group] == NULL) {
+        if (now[group] == nullptr) {
             continue;
         }
 
         node = now[group];
         data = node->pGetData();
 
-        if (data == NULL || data->src_tex == NULL || data->dest_tex == NULL) {
+        if (data == nullptr || data->src_tex == nullptr || data->dest_tex == nullptr) {
             continue;
         }
 
@@ -63,12 +64,8 @@ PORT_OVERRIDE void mgCTextureAnime::TexAnime(int texb, sceVif1Packet *) {
         // Records that wait no frames play together with the record after them.
         for (;;) {
             MgTexturePrepareAnimationDestination(data->src_tex, data->dest_tex);
-            if (MgTextureSourceBpp(data->dest_tex) >= MG_TEX_ANIME_BPP_TRUE_COLOUR) {
-                if (data->bilinear != 0) {
-                    prim.Bilinear(1);
-                } else {
-                    prim.Bilinear(0);
-                }
+            if (MgTextureAnimationMode(data->dest_tex) == texture_catalog::AnimationMode::Draw) {
+                prim.Bilinear(data->bilinear != 0 ? 1 : 0);
 
                 if (data->alpha_blend != MG_TEX_ANIME_ALPHA_BLEND_OFF) {
                     prim.AlphaBlendEnable(1);
@@ -87,8 +84,8 @@ PORT_OVERRIDE void mgCTextureAnime::TexAnime(int texb, sceVif1Packet *) {
 
             mgCTexture *src = data->src_tex;
 
-            if (MgTextureSourceBpp(src) == MG_TEX_ANIME_BPP_INDEXED &&
-                MgTextureSourceBpp(data->dest_tex) == MG_TEX_ANIME_BPP_INDEXED &&
+            if (MgTextureAnimationMode(src) == texture_catalog::AnimationMode::CopyVariant &&
+                MgTextureAnimationMode(data->dest_tex) == texture_catalog::AnimationMode::CopyVariant &&
                 (data->clut_copy != 0 || (data->src_w == src->width && data->src_h == src->height))) {
                 mgPortAdoptColorVariant(src, data->dest_tex);
             }
@@ -96,7 +93,7 @@ PORT_OVERRIDE void mgCTextureAnime::TexAnime(int texb, sceVif1Packet *) {
             if (data->type == MG_TEX_ANIME_TYPE_COPY) {
                 mgCTexture *dest = data->dest_tex;
 
-                if (MgTextureSourceBpp(dest) < MG_TEX_ANIME_BPP_TRUE_COLOUR) {
+                if (MgTextureAnimationMode(dest) != texture_catalog::AnimationMode::Draw) {
                     mgSetPkMoveImage(&data->src_tex->tex0,
                                      mgRect<int>(data->src_x, data->src_y,
                                                  data->src_x + data->src_w - MG_TEX_ANIME_SUBTEXEL,
@@ -119,16 +116,16 @@ PORT_OVERRIDE void mgCTextureAnime::TexAnime(int texb, sceVif1Packet *) {
             if (data->type == MG_TEX_ANIME_TYPE_SCROLL || data->type == MG_TEX_ANIME_TYPE_WAVE) {
                 // The source is split where the scroll or sway has reached and its four
                 // quarters are placed crosswise so that the image wraps round.
-                int src_split_x;
-                int src_split_y;
-                int dest_split_x;
-                int dest_split_y;
-                int src_end_x;
-                int src_end_y;
-                int dest_end_x;
-                int dest_end_y;
+                int src_split_x = 0;
+                int src_split_y = 0;
+                int dest_split_x = 0;
+                int dest_split_y = 0;
+                int src_end_x = 0;
+                int src_end_y = 0;
+                int dest_end_x = 0;
+                int dest_end_y = 0;
 
-                if (MgTextureSourceBpp(data->dest_tex) < MG_TEX_ANIME_BPP_TRUE_COLOUR) {
+                if (MgTextureAnimationMode(data->dest_tex) != texture_catalog::AnimationMode::Draw) {
                     int src_left = data->src_x / MG_TEX_ANIME_SUBTEXEL;
                     int src_top = data->src_y / MG_TEX_ANIME_SUBTEXEL;
                     int src_width = data->src_w / MG_TEX_ANIME_SUBTEXEL;
@@ -137,16 +134,16 @@ PORT_OVERRIDE void mgCTextureAnime::TexAnime(int texb, sceVif1Packet *) {
                     int dest_top = data->dest_y / MG_TEX_ANIME_SUBTEXEL;
                     int dest_width = data->dest_w / MG_TEX_ANIME_SUBTEXEL;
                     int dest_height = data->dest_h / MG_TEX_ANIME_SUBTEXEL;
-                    int offset_x;
-                    int offset_y;
+                    int offset_x = 0;
+                    int offset_y = 0;
 
                     // Retail bug, kept: paletted waves get zero offsets.
                     if (data->type == MG_TEX_ANIME_TYPE_SCROLL) {
                         float period_x = data->period_x;
                         period_x = period_x < 0.0f ? -period_x : period_x;
-                        offset_x = (float) ((dest_width - 1) * data->phase_x) / period_x;
-                        float numerator_y;
-                        float period_y;
+                        offset_x = static_cast<float>((dest_width - 1) * data->phase_x) / period_x;
+                        float numerator_y = NAN;
+                        float period_y = NAN;
                         period_y = data->period_y;
                         numerator_y = (dest_height - 1) * data->phase_y;
                         period_y = period_y < 0.0f ? -period_y : period_y;
@@ -166,37 +163,21 @@ PORT_OVERRIDE void mgCTextureAnime::TexAnime(int texb, sceVif1Packet *) {
                     dest_split_x = dest_left + offset_x + 1;
                     dest_split_y = dest_top + offset_y + 1;
 
-                    if (src_split_x < src_left) {
-                        src_split_x = src_left;
-                    }
+                    src_split_x = std::max(src_split_x, src_left);
 
-                    if (src_split_y < src_top) {
-                        src_split_y = src_top;
-                    }
+                    src_split_y = std::max(src_split_y, src_top);
 
-                    if (dest_split_x < dest_left) {
-                        dest_split_x = dest_left;
-                    }
+                    dest_split_x = std::max(dest_split_x, dest_left);
 
-                    if (dest_split_y < dest_top) {
-                        dest_split_y = dest_top;
-                    }
+                    dest_split_y = std::max(dest_split_y, dest_top);
 
-                    if (src_split_x > src_end_x) {
-                        src_split_x = src_end_x;
-                    }
+                    src_split_x = std::min(src_split_x, src_end_x);
 
-                    if (src_split_y > src_end_y) {
-                        src_split_y = src_end_y;
-                    }
+                    src_split_y = std::min(src_split_y, src_end_y);
 
-                    if (dest_split_x > dest_end_x) {
-                        dest_split_x = dest_end_x;
-                    }
+                    dest_split_x = std::min(dest_split_x, dest_end_x);
 
-                    if (dest_split_y > dest_end_y) {
-                        dest_split_y = dest_end_y;
-                    }
+                    dest_split_y = std::min(dest_split_y, dest_end_y);
 
                     src_split_x *= MG_TEX_ANIME_SUBTEXEL;
                     src_split_y *= MG_TEX_ANIME_SUBTEXEL;
@@ -207,28 +188,28 @@ PORT_OVERRIDE void mgCTextureAnime::TexAnime(int texb, sceVif1Packet *) {
                     dest_end_x *= MG_TEX_ANIME_SUBTEXEL;
                     dest_end_y *= MG_TEX_ANIME_SUBTEXEL;
                 } else {
-                    int offset_x;
-                    int offset_y;
+                    int offset_x = 0;
+                    int offset_y = 0;
 
                     if (data->type == MG_TEX_ANIME_TYPE_SCROLL) {
                         float period_x = data->period_x;
                         period_x = period_x < 0.0f ? -period_x : period_x;
-                        offset_x = (float) (data->dest_w * data->phase_x) / period_x;
-                        float numerator_y;
-                        float period_y;
+                        offset_x = static_cast<float>(data->dest_w * data->phase_x) / period_x;
+                        float numerator_y = NAN;
+                        float period_y = NAN;
                         period_y = data->period_y;
                         numerator_y = data->dest_h * data->phase_y;
                         period_y = period_y < 0.0f ? -period_y : period_y;
                         offset_y = numerator_y / period_y;
                     } else {
-                        offset_x = (float) data->dest_w *
-                                   ((float) data->amplitude_x *
-                                    ((1.0f + sinf(TWO_PI * (float) data->phase_x / (float) data->period_x)) / 2.0f) /
-                                    (float) MG_TEX_ANIME_AMPLITUDE_FULL);
-                        offset_y = (float) data->dest_h *
-                                   ((float) data->amplitude_y *
-                                    ((1.0f + sinf(TWO_PI * (float) data->phase_y / (float) data->period_y)) / 2.0f) /
-                                    (float) MG_TEX_ANIME_AMPLITUDE_FULL);
+                        offset_x = static_cast<float>(data->dest_w) *
+                                   (static_cast<float>(data->amplitude_x) *
+                                    ((1.0f + sinf(TWO_PI * static_cast<float>(data->phase_x) / static_cast<float>(data->period_x))) / 2.0f) /
+                                    static_cast<float>(MG_TEX_ANIME_AMPLITUDE_FULL));
+                        offset_y = static_cast<float>(data->dest_h) *
+                                   (static_cast<float>(data->amplitude_y) *
+                                    ((1.0f + sinf(TWO_PI * static_cast<float>(data->phase_y) / static_cast<float>(data->period_y))) / 2.0f) /
+                                    static_cast<float>(MG_TEX_ANIME_AMPLITUDE_FULL));
                     }
 
                     src_end_x = data->src_x + data->src_w;
@@ -242,7 +223,7 @@ PORT_OVERRIDE void mgCTextureAnime::TexAnime(int texb, sceVif1Packet *) {
                     dest_split_y = data->dest_y + offset_y;
                 }
 
-                if (MgTextureSourceBpp(data->dest_tex) < MG_TEX_ANIME_BPP_TRUE_COLOUR) {
+                if (MgTextureAnimationMode(data->dest_tex) != texture_catalog::AnimationMode::Draw) {
                     mgRect<int> src_rect(0, 0, 0, 0);
 
                     src_rect.Set(data->src_x, data->src_y, src_split_x, src_split_y);
@@ -342,7 +323,7 @@ PORT_OVERRIDE void mgCTextureAnime::TexAnime(int texb, sceVif1Packet *) {
                 }
             }
 
-            if (data->wait != 0 || node->next == NULL) {
+            if (data->wait != 0 || node->next == nullptr) {
                 break;
             }
 
@@ -364,7 +345,7 @@ PORT_OVERRIDE void mgCTextureAnime::TexAnime(int texb, sceVif1Packet *) {
                 CList<mgCTexAnimeData> *next = node->next;
                 now[group] = next;
 
-                if (now[group] == NULL) {
+                if (now[group] == nullptr) {
                     now[group] = list[group];
                 }
             }
@@ -374,7 +355,7 @@ PORT_OVERRIDE void mgCTextureAnime::TexAnime(int texb, sceVif1Packet *) {
                 CList<mgCTexAnimeData> *next = node->next;
                 now[group] = next;
 
-                if (now[group] == NULL) {
+                if (now[group] == nullptr) {
                     now[group] = list[group];
                 }
             }
@@ -384,21 +365,21 @@ PORT_OVERRIDE void mgCTextureAnime::TexAnime(int texb, sceVif1Packet *) {
     // Retail's epilogue flushes the texture cache and restores nothing, so TEXA stays as set above.
 }
 
-// Stride fix: retail finds list[group] as (group << 2) + this + 0x64, a 4-byte pointer stride.
+// Retail indexes list[group] with a 4-byte pointer stride ((group << 2) + this + 0x64), which a host pointer breaks.
 PORT_OVERRIDE CList<mgCTexAnimeData> *mgCTextureAnime::NewTexAnimeGroupData(int group, mgCMemory *stack) {
     if (group < 0 || group >= group_num) {
-        return NULL;
+        return nullptr;
     }
 
     CList<mgCTexAnimeData> *node = NewTexAnimeData(stack);
 
-    if (node == NULL || node->pGetData() == NULL) {
-        return NULL;
+    if (node == nullptr || node->pGetData() == nullptr) {
+        return nullptr;
     }
 
     node->Initialize();
 
-    if (list[group] == NULL) {
+    if (list[group] == nullptr) {
         list[group] = node;
         now[group] = node;
         return node;
@@ -406,7 +387,7 @@ PORT_OVERRIDE CList<mgCTexAnimeData> *mgCTextureAnime::NewTexAnimeGroupData(int 
 
     CList<mgCTexAnimeData> *tail = list[group];
 
-    while (tail->next != NULL) {
+    while (tail->next != nullptr) {
         tail = tail->next;
     }
 

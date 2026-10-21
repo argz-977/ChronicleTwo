@@ -4,12 +4,12 @@
 #include "scene.hpp"
 #include "scenesnd.hpp"
 
-// Stride fix: retail walks stack[] as (u8 *) this + 8 + i * 4, a 4-byte pointer stride.
+// Retail walks stack[] at a 4-byte stride ((u8 *) this + 8 + i * 4); indexing keeps the host pointer size.
 PORT_OVERRIDE void CScene::ClearStack(int index) {
     for (int i = index; i < stack_num; i++) {
         mgCMemory *memory = stack[i];
 
-        if (memory == NULL) {
+        if (memory == nullptr) {
             continue;
         }
 
@@ -17,7 +17,7 @@ PORT_OVERRIDE void CScene::ClearStack(int index) {
         memory->lock = 0;
 
         if (index < i) {
-            memory->stSetBuffer(NULL, 0);
+            memory->stSetBuffer(nullptr, 0);
         }
     }
 }
