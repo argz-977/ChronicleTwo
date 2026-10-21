@@ -329,7 +329,12 @@ int Run(int argc, const char **argv) {
 
 } // namespace
 
+#if defined(__APPLE__) && defined(__IPHONEOS__)
+    // iOS: SDL3's UIKit backend calls SDL_main from the app delegate.
+extern "C" PORT_OVERRIDE int SDL_main(int argc, char **argv) {
+#else
 PORT_OVERRIDE int main(int argc, const char **argv) {
+#endif
     return Run(argc, argv);
 }
 

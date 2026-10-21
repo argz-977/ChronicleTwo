@@ -238,6 +238,8 @@ function(ct_link_game target)
     if(WIN32)
         # The Rust host UI uses Windows input, theme, OpenGL and desktop-composition APIs.
         target_link_libraries(${target} PRIVATE imm32 uxtheme opengl32 dwmapi)
+    elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+        target_link_libraries(${target} PRIVATE "-framework UIKit" "-framework Metal" "-framework QuartzCore" "-framework CoreMotion" "-framework CoreGraphics")
     endif()
 endfunction()
 
