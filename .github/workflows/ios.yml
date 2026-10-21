@@ -52,7 +52,7 @@ jobs:
       - name: Configure for iOS
         run: |
           cmake --preset ios-arm64 \
-            -DCMAKE_PREFIX_PATH="$SDL3_PREFIX" \
+            -DSDL3_DIR="$SDL3_PREFIX/lib/cmake/SDL3" \
             -DCT_TEST_TIMEOUT=60
 
       - name: Build for iOS
