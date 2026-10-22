@@ -515,6 +515,7 @@ Environment, with the `DC2` prefix that `GameSetIdentity` sets:
 - `DC2_SCRIPT_VM=interpreter`: run every script on the retail interpreter, including those with a Luau module ([PORT_LUAU.md](PORT_LUAU.md)).
 - `DC2_CRASH_TEST=MODE[:early]`: as `--crash-test` (see "Test hooks"); the option outranks it.
 - `DC2_VULKAN_VALIDATION`: has no effect. `main` ORs its presence into `gfx::RendererConfig::validation`, which is already on in a Debug build, and a Release build never requests the layer.
+- `DC2_RENDER_SCALE`: pixels per PS2 line of the render targets (`gfx::RendererConfig::render_scale`), up to 8; `0` derives it from the window height over 480, the PC default. iOS defaults to 2, since its screens would otherwise render at 3.
 
 Debug builds request the validation layer (`gfx::RendererConfig::validation`, on unless `NDEBUG` is defined). Release builds never request it. Without the layer installed, the renderer prints `gfx: validation requested but VK_LAYER_KHRONOS_validation is not installed` and goes on.
 
