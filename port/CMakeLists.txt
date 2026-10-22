@@ -338,6 +338,13 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
         MACOSX_BUNDLE_BUNDLE_NAME "Dark Chronicle"
         MACOSX_BUNDLE_SHORT_VERSION_STRING 0.1
         MACOSX_BUNDLE_BUNDLE_VERSION 1)
+    # The on-screen gamepad is a UIKit view, so Objective-C++, built apart from the game's forced includes.
+    enable_language(OBJCXX)
+    add_library(ct_ios_touch OBJECT ${PORT_DIR}/platform/ios_touch_overlay.mm)
+    set_target_properties(ct_ios_touch PROPERTIES OBJCXX_STANDARD 20 OBJCXX_STANDARD_REQUIRED ON)
+    target_include_directories(ct_ios_touch PRIVATE ${KZ_ROOT}/include)
+    target_compile_options(ct_ios_touch PRIVATE -fobjc-arc -Wall)
+    target_link_libraries(darkchronicle PRIVATE ct_ios_touch)
 endif()
 if(WIN32)
     target_link_options(darkchronicle PRIVATE -municode)

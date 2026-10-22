@@ -37,6 +37,9 @@
 #include "platform/input.hpp"
 #include "platform/input_script.hpp"
 #include "platform/input_startup.hpp"
+#ifdef SDL_PLATFORM_IOS
+#include "platform/ios_touch_overlay.hpp"
+#endif
 #include "platform/paths.hpp"
 #include "platform/settings.hpp"
 #include "platform/window.hpp"
@@ -472,6 +475,7 @@ static int IosMain(int argc, char **argv) {
             std::fprintf(stderr, "darkchronicle: env %s=%s\n", key.c_str(), value.c_str());
         }
     }
+    IosTouchOverlayStart();
     return Run(argc, const_cast<const char **>(argv));
 }
 #endif
