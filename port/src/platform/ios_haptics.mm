@@ -58,8 +58,9 @@ bool Open(Handle &handle, GCController *controller, GCHapticsLocality locality) 
         Fail("creating an engine", nil);
         return false;
     }
+    // A flag of its own, so a late handler of the engine this one replaces cannot stop it.
+    handle.stopped = std::make_shared<std::atomic<bool>>(false);
     auto stopped = handle.stopped;
-    stopped->store(false);
     handle.engine.stoppedHandler = ^(CHHapticEngineStoppedReason) {
       stopped->store(true);
     };
