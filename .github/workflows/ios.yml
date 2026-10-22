@@ -89,6 +89,8 @@ jobs:
           build=port/build/ios-arm64-release
           mkdir -p "$RUNNER_TEMP/ipa/Payload"
           cp -R "$build/darkchronicle.app" "$RUNNER_TEMP/ipa/Payload/"
+          # The split debug symbols would double the download; they are no part of the app.
+          rm -rf "$RUNNER_TEMP/ipa/Payload/darkchronicle.app/darkchronicle.dSYM"
           cp -R "$build/glyphs" "$RUNNER_TEMP/ipa/Payload/darkchronicle.app/"
           mkdir -p "$RUNNER_TEMP/ipa/Payload/darkchronicle.app/assets"
           cp "$build/assets/data.zip" "$RUNNER_TEMP/ipa/Payload/darkchronicle.app/assets/"
