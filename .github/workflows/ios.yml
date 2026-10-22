@@ -95,6 +95,8 @@ jobs:
           # The Luau scripts the events run, which the game finds in scripts/ beside its executable.
           cp -R "$build/scripts" "$RUNNER_TEMP/ipa/Payload/darkchronicle.app/"
           test -n "$(find "$RUNNER_TEMP/ipa/Payload/darkchronicle.app/scripts" -name '*.luau' | head -n1)"
+          # Each one with its bytecode, so the device does not compile them (CT_LUAU_PRECOMPILE).
+          test -n "$(find "$RUNNER_TEMP/ipa/Payload/darkchronicle.app/scripts" -name '*.luauc' | head -n1)"
           mkdir -p "$RUNNER_TEMP/ipa/Payload/darkchronicle.app/assets"
           cp "$build/assets/data.zip" "$RUNNER_TEMP/ipa/Payload/darkchronicle.app/assets/"
           # The home screen icon, which SideStore and LiveContainer also show.
