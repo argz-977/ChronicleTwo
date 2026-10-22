@@ -85,39 +85,61 @@ void IosCloseSetupWindow() {
     }
 }
 
-// Extracts on a worker thread while the main thread keeps UIKit's run loop turning, so the system does not take
-// the app for hung. False when there is no disc image to extract.
-bool IosSetupData(const fs::path &root) {
-    const std::optional<fs::path> image = IosDiscImage();
-    if (!image) {
-        IosMessage(SDL_MESSAGEBOX_INFORMATION,
-                   "Copy your Dark Chronicle disc image (.iso) into Files > On My iPhone > Dark Chronicle, then open "
-                   "the game again.\n\nUnder LiveContainer, copy it into the game's data folder instead: "
-                   "LiveContainer's own folder, then Data > Application > the game's folder > Documents.");
-        return false;
+// The Files app lists the app's folder only once Documents holds something, so a note there shows the player
+// where the disc image goes.
+void IosLeaveNote() {
+    const char *home = std::getenv("HOME");
+    if (home == nullptr) {
+        return;
     }
-    const std::string notice = "Extracting the game data from " + image->filename().string() +
-                               ". This takes several minutes: keep the game open and the screen on.";
-    IosMessage(SDL_MESSAGEBOX_INFORMATION, notice.c_str());
-    std::atomic<bool> done = false;
-    std::string       failure;
-    std::thread       worker([&] {
-        try {
-            const unsigned jobs = std::clamp(std::thread::hardware_concurrency(), 1u, 4u);
-            kazarov::extract(image->string(), root.string(), jobs);
-        } catch (const std::exception &error) {
-            failure = error.what();
+    std::error_code error;
+    const fs::path  documents = fs::path(home) / "Documents";
+    fs::create_directories(documents, error);
+    const fs::path note = documents / "Copy the Dark Chronicle ISO here.txt";
+    if (!fs::exists(note, error)) {
+        std::ofstream(note) << "Copy your Dark Chronicle disc image (.iso) into this folder, then open the game.\n";
+    }
+}
+
+// Extracts the disc image on a worker thread while the main thread keeps UIKit's run loop turning, so the system
+// does not take the app for hung. An iOS app does not quit itself: without a disc image, or after a failed
+// extraction, the player is told what to do and the search starts again when they tap the button.
+void IosSetupData(const fs::path &root) {
+    IosLeaveNote();
+    while (FirstRunDataMissing(root)) {
+        const std::optional<fs::path> image = IosDiscImage();
+        if (!image) {
+            IosMessage(SDL_MESSAGEBOX_INFORMATION,
+                       "No Dark Chronicle disc image found.\n\nCopy your disc image (.iso) into Files > On My "
+                       "iPhone > Dark Chronicle, then tap OK to look again.\n\nUnder LiveContainer, copy it into "
+                       "the game's data folder instead: LiveContainer's own folder, then Data > Application > the "
+                       "game's folder > Documents.");
+            continue;
         }
-        done = true;
-    });
-    while (!done) {
-        CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.05, true);
+        const std::string notice = "Extracting the game data from " + image->filename().string() +
+                                   ". This takes several minutes: keep the game open and the screen on.";
+        IosMessage(SDL_MESSAGEBOX_INFORMATION, notice.c_str());
+        std::atomic<bool> done = false;
+        std::string       failure;
+        std::thread       worker([&] {
+            try {
+                const unsigned jobs = std::clamp(std::thread::hardware_concurrency(), 1u, 4u);
+                kazarov::extract(image->string(), root.string(), jobs);
+            } catch (const std::exception &error) {
+                failure = error.what();
+            }
+            done = true;
+        });
+        while (!done) {
+            CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.05, true);
+        }
+        worker.join();
+        if (!failure.empty()) {
+            CT_LOG_ERROR(Main, "Game data setup: {}", failure);
+            IosMessage(SDL_MESSAGEBOX_ERROR, ("The game data could not be extracted:\n" + failure).c_str());
+        }
     }
-    worker.join();
-    if (!failure.empty()) {
-        throw std::runtime_error(failure);
-    }
-    return true;
+    IosCloseSetupWindow();
 }
 #endif
 
@@ -160,11 +182,8 @@ void FirstRunRequireData(const fs::path &root, bool headless) {
     if (!headless) {
         try {
 #ifdef SDL_PLATFORM_IOS
-            const bool extracted = IosSetupData(root);
-            IosCloseSetupWindow();
-            if (extracted && !FirstRunDataMissing(root)) {
-                return;
-            }
+            IosSetupData(root);
+            return;
 #else
             const auto path = root.u8string();
             if (kazarov::setup_data("Dark Chronicle — Game data", std::string(

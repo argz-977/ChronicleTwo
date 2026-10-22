@@ -446,6 +446,14 @@ int Run(int argc, const char **argv) {
 #ifdef SDL_PLATFORM_IOS
 // UIKit owns the process: SDL_RunApp starts the application delegate, which calls back into Run once it is up.
 static int IosMain(int argc, char **argv) {
+    // iOS shows no console: stderr goes to Documents, where the Files app reaches it, from the first line on.
+    if (const char *home = std::getenv("HOME")) {
+        const std::string log = std::string(home) + "/Documents/stderr.log";
+        if (std::freopen(log.c_str(), "w", stderr) != nullptr) {
+            std::setvbuf(stderr, nullptr, _IONBF, 0);
+            std::fprintf(stderr, "darkchronicle: started\n");
+        }
+    }
     return Run(argc, const_cast<const char **>(argv));
 }
 #endif
