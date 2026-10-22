@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -452,6 +453,23 @@ static int IosMain(int argc, char **argv) {
         if (std::freopen(log.c_str(), "w", stderr) != nullptr) {
             std::setvbuf(stderr, nullptr, _IONBF, 0);
             std::fprintf(stderr, "darkchronicle: started\n");
+        }
+        // iOS has no way to start the game with environment variables, so chronicletwo/env.txt in Documents
+        // holds them, one KEY=VALUE a line: the DC2_ settings, or MoltenVK's MVK_CONFIG_ and Metal's MTL_ ones for
+        // diagnosing the renderer. Each is set before SDL and the renderer start.
+        std::ifstream env(std::string(home) + "/Documents/chronicletwo/env.txt");
+        for (std::string line; std::getline(env, line);) {
+            if (!line.empty() && line.back() == '\r') {
+                line.pop_back();
+            }
+            const std::size_t equals = line.find('=');
+            if (line.empty() || line.front() == '#' || equals == std::string::npos || equals == 0) {
+                continue;
+            }
+            const std::string key = line.substr(0, equals);
+            const std::string value = line.substr(equals + 1);
+            setenv(key.c_str(), value.c_str(), 1);
+            std::fprintf(stderr, "darkchronicle: env %s=%s\n", key.c_str(), value.c_str());
         }
     }
     return Run(argc, const_cast<const char **>(argv));
