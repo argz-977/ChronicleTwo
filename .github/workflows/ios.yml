@@ -16,8 +16,6 @@ jobs:
     env:
       HOMEBREW_NO_AUTO_UPDATE: 1
       HOMEBREW_NO_INSTALL_CLEANUP: 1
-      # Cargo's C builds (zstd, cxx, the movie muxer) otherwise target the SDK's own iOS version, not the app's.
-      IPHONEOS_DEPLOYMENT_TARGET: "15.0"
     steps:
       - uses: actions/checkout@v7
         with:
@@ -76,6 +74,10 @@ jobs:
             -DCT_BUILD_TESTS=OFF
 
       - name: Build for iOS
+        # Cargo's C builds (zstd, cxx, the movie muxer) otherwise target the SDK's own iOS version, not the app's.
+        # Only here: FFmpeg's configure would build its host tools for iOS too and could not run them.
+        env:
+          IPHONEOS_DEPLOYMENT_TARGET: "15.0"
         # -k 0 reports every unit that fails, not only the first.
         run: cmake --build port/build/ios-arm64-release --target darkchronicle -j"$(sysctl -n hw.ncpu)" -- -k 0
 
