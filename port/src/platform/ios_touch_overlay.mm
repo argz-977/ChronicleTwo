@@ -14,20 +14,21 @@
 
 namespace {
 
-// Fourteen buttons, then the left and the right stick.
-constexpr int kControls = 16;
-constexpr int kButtons = 14;
+// Sixteen buttons, then the left and the right stick.
+constexpr int kControls = 18;
+constexpr int kButtons = 16;
+constexpr int kLeftStick = 16;
 
 constexpr std::array<std::uint16_t, kButtons> kButtonBits = {
     kInputUp, kInputDown, kInputLeft, kInputRight, kInputCross, kInputCircle, kInputSquare,
-    kInputTriangle, kInputL1, kInputR1, kInputL2, kInputR2, kInputSelect, kInputStart};
+    kInputTriangle, kInputL1, kInputR1, kInputL2, kInputR2, kInputSelect, kInputStart, kInputL3, kInputR3};
 
 NSString *const kLabels[kButtons] = {@"↑", @"↓", @"←", @"→", @"×", @"○", @"□", @"△",
-                                     @"L1", @"R1", @"L2", @"R2", @"SELECT", @"START"};
+                                     @"L1", @"R1", @"L2", @"R2", @"SELECT", @"START", @"L3", @"R3"};
 
 constexpr std::array<std::uint32_t, kButtons> kColours = {
     0xedf2ff, 0xedf2ff, 0xedf2ff, 0xedf2ff, 0x73b8ff, 0xff878b, 0xefa1e9,
-    0x8be7a5, 0xedf2ff, 0xedf2ff, 0xedf2ff, 0xedf2ff, 0xedf2ff, 0xedf2ff};
+    0x8be7a5, 0xedf2ff, 0xedf2ff, 0xedf2ff, 0xedf2ff, 0xedf2ff, 0xedf2ff, 0xedf2ff, 0xedf2ff};
 
 UIColor *Colour(std::uint32_t argb) {
     return [UIColor colorWithRed:((argb >> 16) & 0xff) / 255.0
@@ -77,7 +78,7 @@ CGFloat Clamp(CGFloat value, CGFloat lo, CGFloat hi) { return std::max(lo, std::
     const CGFloat side = Clamp(.08 + .08 * s / w, .10, .16);
     const CGFloat left = x0 + side * w, right = x0 + (1 - side) * w, row = y0 + h * .52;
     for (int i = 0; i < kControls; ++i) {
-        _radius[i] = i < 12 ? r : i < 14 ? small : 80 * scale;
+        _radius[i] = i < 12 ? r : i < kButtons ? small : 80 * scale;
     }
     _cx[0] = _cx[1] = left;
     _cy[0] = row - step;
@@ -98,9 +99,13 @@ CGFloat Clamp(CGFloat value, CGFloat lo, CGFloat hi) { return std::max(lo, std::
     _cx[12] = x0 + w * .43;
     _cx[13] = x0 + w * .57;
     _cy[12] = _cy[13] = y0 + h * .92;
-    _cx[14] = x0 + (side + .025) * w;
-    _cx[15] = x0 + (1 - side - .025) * w;
-    _cy[14] = _cy[15] = y0 + h * .86;
+    _cx[16] = x0 + (side + .025) * w;
+    _cx[17] = x0 + (1 - side - .025) * w;
+    _cy[16] = _cy[17] = y0 + h * .86;
+    // Android has no L3 or R3; here they sit beside their sticks, on the side facing the centre.
+    _cx[14] = _cx[16] + _radius[16] + small * 1.4;
+    _cx[15] = _cx[17] - _radius[17] - small * 1.4;
+    _cy[14] = _cy[15] = _cy[16];
     [_captures removeAllObjects];
     [self publish];
     [self setNeedsDisplay];
@@ -141,8 +146,8 @@ CGFloat Clamp(CGFloat value, CGFloat lo, CGFloat hi) { return std::max(lo, std::
                 x /= magnitude;
                 y /= magnitude;
             }
-            (control == 14 ? next.left_x : next.right_x) = static_cast<float>(x);
-            (control == 14 ? next.left_y : next.right_y) = static_cast<float>(y);
+            (control == kLeftStick ? next.left_x : next.right_x) = static_cast<float>(x);
+            (control == kLeftStick ? next.left_y : next.right_y) = static_cast<float>(y);
         }
     }
     if (next.buttons != _last.buttons || next.left_x != _last.left_x || next.left_y != _last.left_y ||
@@ -200,7 +205,8 @@ CGFloat Clamp(CGFloat value, CGFloat lo, CGFloat hi) { return std::max(lo, std::
     CGContextRef context = UIGraphicsGetCurrentContext();
     for (int i = kButtons; i < kControls; ++i) {
         [self disc:context x:_cx[i] y:_cy[i] r:_radius[i] fill:0x29202a3a edge:0x779fabc0];
-        const CGFloat dx = i == 14 ? _last.left_x : _last.right_x, dy = i == 14 ? _last.left_y : _last.right_y;
+        const CGFloat dx = i == kLeftStick ? _last.left_x : _last.right_x;
+        const CGFloat dy = i == kLeftStick ? _last.left_y : _last.right_y;
         [self disc:context
                  x:_cx[i] + dx * _radius[i] * .45
                  y:_cy[i] + dy * _radius[i] * .45
