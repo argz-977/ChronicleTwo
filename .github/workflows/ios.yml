@@ -16,6 +16,8 @@ jobs:
     env:
       HOMEBREW_NO_AUTO_UPDATE: 1
       HOMEBREW_NO_INSTALL_CLEANUP: 1
+      # Cargo's C builds (zstd, cxx, the movie muxer) otherwise target the SDK's own iOS version, not the app's.
+      IPHONEOS_DEPLOYMENT_TARGET: "15.0"
     steps:
       - uses: actions/checkout@v7
         with:
