@@ -18,6 +18,12 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
     target_compile_options(ct_options INTERFACE -march=${CT_X86_64_LEVEL})
     target_compile_options(ct_host PRIVATE -march=${CT_X86_64_LEVEL})
 endif()
+# iOS 18, the minimum, runs only on A12 and later, so iOS builds target that core (ARMv8.3, with LSE atomics) rather
+# than the toolchain's A7 baseline.
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    target_compile_options(ct_options INTERFACE -mcpu=apple-a12)
+    target_compile_options(ct_host PRIVATE -mcpu=apple-a12)
+endif()
 
 if(NOT CT_LTO STREQUAL "off")
     set(ct_optimised $<NOT:$<CONFIG:Debug>>)
