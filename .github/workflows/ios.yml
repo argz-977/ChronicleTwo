@@ -23,7 +23,7 @@ jobs:
 
       - name: Install the toolchain and libraries
         run: |
-          brew install cmake ninja glslang molten-vk
+          brew install cmake ninja glslang
           rustup toolchain install stable --profile minimal
           rustup target add aarch64-apple-ios
           cargo install cxxbridge-cmd --version 1.0.205 --locked
@@ -50,10 +50,24 @@ jobs:
           cmake --install "$RUNNER_TEMP/sdl-ios-build" --config Release
           echo "SDL3_PREFIX=$RUNNER_TEMP/sdl-ios" >> "$GITHUB_ENV"
 
+      # Homebrew's molten-vk is a macOS dylib; the iOS static library and its Vulkan headers come from the
+      # MoltenVK release.
+      - name: Fetch MoltenVK for iOS
+        run: |
+          curl -L https://github.com/KhronosGroup/MoltenVK/releases/download/v1.4.2/MoltenVK-ios.tar \
+            | tar x -C "$RUNNER_TEMP"
+          lib=$(find "$RUNNER_TEMP/MoltenVK" -path '*/static/MoltenVK.xcframework/ios-arm64/libMoltenVK.a' | head -n1)
+          header=$(find "$RUNNER_TEMP/MoltenVK" -path '*/include/vulkan/vulkan.h' | head -n1)
+          test -n "$lib" && test -n "$header"
+          echo "MOLTENVK_LIBRARY=$lib" >> "$GITHUB_ENV"
+          echo "VULKAN_INCLUDE_DIR=$(dirname "$(dirname "$header")")" >> "$GITHUB_ENV"
+
       - name: Configure for iOS
         run: |
           cmake --preset ios-arm64 \
             -DSDL3_DIR="$SDL3_PREFIX/lib/cmake/SDL3" \
+            -DVulkan_INCLUDE_DIR="$VULKAN_INCLUDE_DIR" \
+            -DVulkan_LIBRARY="$MOLTENVK_LIBRARY" \
             -DCT_TEST_TIMEOUT=60
 
       - name: Build for iOS

@@ -9,6 +9,13 @@
 #include <system_error>
 #include <vector>
 
+#include <SDL3/SDL_platform.h>
+#ifdef SDL_PLATFORM_IOS
+// main stays this file's own entry point (and the PORT_OVERRIDE of the game's), so SDL must not rename it.
+#define SDL_MAIN_HANDLED
+#include <SDL3/SDL_main.h>
+#endif
+
 #include "audio/soundtrack.hpp"
 #include "audio_init.hpp"
 #include "crash/crash.hpp"
@@ -436,13 +443,19 @@ int Run(int argc, const char **argv) {
 
 } // namespace
 
-#if defined(__APPLE__) && defined(__IPHONEOS__)
-    // iOS: SDL3's UIKit backend calls SDL_main from the app delegate.
-extern "C" PORT_OVERRIDE int SDL_main(int argc, char **argv) {
-#else
-PORT_OVERRIDE int main(int argc, const char **argv) {
+#ifdef SDL_PLATFORM_IOS
+// UIKit owns the process: SDL_RunApp starts the application delegate, which calls back into Run once it is up.
+static int IosMain(int argc, char **argv) {
+    return Run(argc, const_cast<const char **>(argv));
+}
 #endif
+
+PORT_OVERRIDE int main(int argc, const char **argv) {
+#ifdef SDL_PLATFORM_IOS
+    return SDL_RunApp(argc, const_cast<char **>(argv), IosMain, nullptr);
+#else
     return Run(argc, argv);
+#endif
 }
 
 #ifdef _WIN32
