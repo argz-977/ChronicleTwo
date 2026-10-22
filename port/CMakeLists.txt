@@ -343,7 +343,7 @@ if(WIN32)
 endif()
 
 include(GNUInstallDirs)
-install(TARGETS darkchronicle RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS darkchronicle RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} BUNDLE DESTINATION .)
 if(CT_ENABLE_TRACY)
     install(FILES ${CMAKE_BINARY_DIR}/Tracy-LICENSE.txt
         DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/chronicletwo)
