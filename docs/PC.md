@@ -727,6 +727,8 @@ without a guessed migration factor.
 
 Open **Options**, then press **SELECT** (Backspace with the default keyboard bindings), or click **PC SETTINGS** above the list. The original Options page still edits the retail save's options. Its confirm, cancel, reset, and L1/R1 page scrolling are unchanged; returning from PC SETTINGS keeps its cursor and choices.
 
+On iOS the page is called **APP SETTINGS** and leaves out the rows that have nothing to act on there: window mode, resolution, present mode, the mouse rows and the DualSense speaker.
+
 The PC page uses the game's font and Options artwork. L1/R1 changes tabs, Up/Down selects a row, Left/Right changes a value, and confirm advances a choice or opens binding capture. Cancel returns to Options; Japanese retains its reversed confirm/cancel layout. The mouse can click tabs and value arrows, scroll rows, restore a binding, and return to Options. Hit targets follow aspect ratio, UI scale and window DPI.
 
 The **PC SETTINGS** entry and the page are drawn at the UI scale, or smaller when that scale would push them past the window (`options::FitView`, about 113% for the page and 124% for the entry at 16:9 and 4:3), so every offered scale leaves them whole, readable and clickable. Their hit targets use the same view. The rest of the game keeps the chosen scale.
