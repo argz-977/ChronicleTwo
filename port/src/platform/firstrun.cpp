@@ -68,16 +68,74 @@ std::optional<fs::path> IosDiscImage() {
 
 // UIKit shows an alert only over a window of the app's scene, and the game's own window does not exist yet: the
 // setup shows its messages over a window of its own, which stays up, black, while the data is extracted.
-SDL_Window *g_setup_window = nullptr;
+SDL_Window   *g_setup_window = nullptr;
+SDL_Renderer *g_setup_renderer = nullptr;
 
-void IosMessage(SDL_MessageBoxFlags flags, const char *text) {
+void IosOpenSetupWindow() {
     if (g_setup_window == nullptr && SDL_InitSubSystem(SDL_INIT_VIDEO)) {
         g_setup_window = SDL_CreateWindow("Dark Chronicle", 0, 0, SDL_WINDOW_FULLSCREEN);
     }
+}
+
+void IosMessage(SDL_MessageBoxFlags flags, const char *text) {
+    IosOpenSetupWindow();
     SDL_ShowSimpleMessageBox(flags, "Dark Chronicle", text, g_setup_window);
 }
 
+// SDL's debug font has ASCII alone; the stage names end in an ellipsis.
+std::string IosAscii(std::string_view text) {
+    std::string ascii;
+    for (const char c : text) {
+        if (static_cast<unsigned char>(c) < 0x80) {
+            ascii += c;
+        }
+    }
+    return ascii;
+}
+
+// Draws the extraction's progress: its stage, a bar and the percentage.
+void IosDrawProgress(const std::string &image, float fraction, const std::string &stage) {
+    IosOpenSetupWindow();
+    if (g_setup_renderer == nullptr && g_setup_window != nullptr) {
+        g_setup_renderer = SDL_CreateRenderer(g_setup_window, nullptr);
+    }
+    if (g_setup_renderer == nullptr) {
+        return;
+    }
+    int width = 0;
+    int height = 0;
+    SDL_GetCurrentRenderOutputSize(g_setup_renderer, &width, &height);
+    // The debug font's glyphs are 8 pixels square; this scale makes lines about a thirtieth of the height.
+    const float scale = std::max(1.0f, static_cast<float>(height) / 240.0f);
+    const float w = static_cast<float>(width) / scale;
+    const float h = static_cast<float>(height) / scale;
+    SDL_SetRenderScale(g_setup_renderer, 1.0f, 1.0f);
+    SDL_SetRenderDrawColor(g_setup_renderer, 0, 0, 0, 255);
+    SDL_RenderClear(g_setup_renderer);
+    SDL_SetRenderScale(g_setup_renderer, scale, scale);
+    auto centred = [&](const std::string &text, float y) {
+        const float x = (w - static_cast<float>(text.size()) * SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE) / 2.0f;
+        SDL_RenderDebugText(g_setup_renderer, std::max(0.0f, x), y, text.c_str());
+    };
+    SDL_SetRenderDrawColor(g_setup_renderer, 255, 255, 255, 255);
+    centred("Extracting the game data from " + IosAscii(image), h * 0.30f);
+    centred(IosAscii(stage), h * 0.42f);
+    const SDL_FRect frame = {w * 0.15f, h * 0.52f, w * 0.70f, 10.0f};
+    SDL_RenderRect(g_setup_renderer, &frame);
+    const SDL_FRect bar = {frame.x + 2.0f, frame.y + 2.0f, (frame.w - 4.0f) * std::clamp(fraction, 0.0f, 1.0f),
+                           frame.h - 4.0f};
+    SDL_RenderFillRect(g_setup_renderer, &bar);
+    centred(std::to_string(static_cast<int>(std::clamp(fraction, 0.0f, 1.0f) * 100.0f)) + "%", h * 0.60f);
+    SDL_SetRenderDrawColor(g_setup_renderer, 160, 160, 160, 255);
+    centred("This takes several minutes: keep the game open and the screen on.", h * 0.75f);
+    SDL_RenderPresent(g_setup_renderer);
+}
+
 void IosCloseSetupWindow() {
+    if (g_setup_renderer != nullptr) {
+        SDL_DestroyRenderer(g_setup_renderer);
+        g_setup_renderer = nullptr;
+    }
     if (g_setup_window != nullptr) {
         SDL_DestroyWindow(g_setup_window);
         g_setup_window = nullptr;
@@ -116,9 +174,8 @@ void IosSetupData(const fs::path &root) {
                        "game's folder > Documents.");
             continue;
         }
-        const std::string notice = "Extracting the game data from " + image->filename().string() +
-                                   ". This takes several minutes: keep the game open and the screen on.";
-        IosMessage(SDL_MESSAGEBOX_INFORMATION, notice.c_str());
+        // The screen must stay on through the extraction: a locked iPhone suspends the app.
+        SDL_DisableScreenSaver();
         std::atomic<bool> done = false;
         std::string       failure;
         std::thread       worker([&] {
@@ -126,7 +183,7 @@ void IosSetupData(const fs::path &root) {
                 // Each worker holds its resources' converted output: two keep the peak well inside what iOS lets an
                 // app use.
                 const unsigned jobs = std::clamp(std::thread::hardware_concurrency(), 1u, 2u);
-                kazarov::extract(image->string(), root.string(), jobs);
+                kazarov::extract_tracked(image->string(), root.string(), jobs);
             } catch (const std::exception &error) {
                 failure = error.what();
             }
@@ -134,6 +191,9 @@ void IosSetupData(const fs::path &root) {
         });
         while (!done) {
             CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.05, true);
+            SDL_PumpEvents();
+            const kazarov::ExtractStatus status = kazarov::extract_status();
+            IosDrawProgress(image->filename().string(), status.fraction, std::string(status.stage));
         }
         worker.join();
         if (!failure.empty()) {
