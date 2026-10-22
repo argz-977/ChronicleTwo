@@ -2,7 +2,8 @@ name: iOS builds
 
 on:
   push:
-    branches: [master]
+    # The iOS work branches build too, so each has an .ipa before it is merged.
+    branches: [master, 'ios/**']
   pull_request:
   workflow_dispatch:
 
