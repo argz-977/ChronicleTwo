@@ -123,7 +123,9 @@ void IosSetupData(const fs::path &root) {
         std::string       failure;
         std::thread       worker([&] {
             try {
-                const unsigned jobs = std::clamp(std::thread::hardware_concurrency(), 1u, 4u);
+                // Each worker holds its resources' converted output: two keep the peak well inside what iOS lets an
+                // app use.
+                const unsigned jobs = std::clamp(std::thread::hardware_concurrency(), 1u, 2u);
                 kazarov::extract(image->string(), root.string(), jobs);
             } catch (const std::exception &error) {
                 failure = error.what();
