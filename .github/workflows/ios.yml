@@ -74,7 +74,8 @@ jobs:
             -DCT_BUILD_TESTS=OFF
 
       - name: Build for iOS
-        run: cmake --build port/build/ios-arm64-release --target darkchronicle -j"$(sysctl -n hw.ncpu)"
+        # -k 0 reports every unit that fails, not only the first.
+        run: cmake --build port/build/ios-arm64-release --target darkchronicle -j"$(sysctl -n hw.ncpu)" -- -k 0
 
       # The .ipa is unsigned: a sideloading tool (Sideloadly, AltStore) signs it with the installer's Apple ID.
       # The button symbols go inside the bundle, which is where the game looks beside its executable.
