@@ -112,3 +112,11 @@ jobs:
           name: DarkChronicle-ios-arm64
           path: DarkChronicle.ipa
           if-no-files-found: error
+
+      # The symbols stay out of the .ipa but are kept to read the addresses in a device's stack reports.
+      - name: Upload the debug symbols
+        uses: actions/upload-artifact@v7
+        with:
+          name: DarkChronicle-ios-arm64-dSYM
+          path: port/build/ios-arm64-release/darkchronicle.app/darkchronicle.dSYM
+          if-no-files-found: warn
