@@ -92,6 +92,9 @@ jobs:
           # The split debug symbols would double the download; they are no part of the app.
           rm -rf "$RUNNER_TEMP/ipa/Payload/darkchronicle.app/darkchronicle.dSYM"
           cp -R "$build/glyphs" "$RUNNER_TEMP/ipa/Payload/darkchronicle.app/"
+          # The Luau scripts the events run, which the game finds in scripts/ beside its executable.
+          cp -R "$build/scripts" "$RUNNER_TEMP/ipa/Payload/darkchronicle.app/"
+          test -n "$(find "$RUNNER_TEMP/ipa/Payload/darkchronicle.app/scripts" -name '*.luau' | head -n1)"
           mkdir -p "$RUNNER_TEMP/ipa/Payload/darkchronicle.app/assets"
           cp "$build/assets/data.zip" "$RUNNER_TEMP/ipa/Payload/darkchronicle.app/assets/"
           # The home screen icon, which SideStore and LiveContainer also show.
