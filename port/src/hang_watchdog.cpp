@@ -30,15 +30,13 @@ void PrintFrame(int index, std::uintptr_t address) {
     Dl_info info{};
     if (dladdr(reinterpret_cast<void *>(address), &info) != 0 && info.dli_fbase != nullptr) {
         const char *image = info.dli_fname ? std::strrchr(info.dli_fname, '/') : nullptr;
-        std::fprintf(stderr, "hang: #%-2d %s+0x%lx %s+0x%lx
-", index, image ? image + 1 : "?",
+        std::fprintf(stderr, "hang: #%-2d %s+0x%lx %s+0x%lx\n", index, image ? image + 1 : "?",
                      static_cast<unsigned long>(address - reinterpret_cast<std::uintptr_t>(info.dli_fbase)),
                      info.dli_sname ? info.dli_sname : "?",
                      static_cast<unsigned long>(info.dli_saddr ? address - reinterpret_cast<std::uintptr_t>(info.dli_saddr)
                                                                : 0));
     } else {
-        std::fprintf(stderr, "hang: #%-2d 0x%lx
-", index, static_cast<unsigned long>(address));
+        std::fprintf(stderr, "hang: #%-2d 0x%lx\n", index, static_cast<unsigned long>(address));
     }
 }
 
@@ -64,8 +62,7 @@ void PrintPs2Threads() {
     const std::size_t count = KzThreadsSnapshot(threads, 32);
     for (std::size_t i = 0; i < count && i < 32; ++i) {
         const KzThreadInfo &t = threads[i];
-        std::fprintf(stderr, "hang: ps2 thread %d priority %d state %d waiting on %d
-", t.id, t.priority, t.state,
+        std::fprintf(stderr, "hang: ps2 thread %d priority %d state %d waiting on %d\n", t.id, t.priority, t.state,
                      t.waiting_on);
         if (t.pc != 0) {
             PrintFrame(0, t.pc);
@@ -79,8 +76,7 @@ void PrintPs2Threads() {
 void PrintStack(pthread_t game) {
     const mach_port_t thread = pthread_mach_thread_np(game);
     if (thread_suspend(thread) != KERN_SUCCESS) {
-        std::fprintf(stderr, "hang: cannot suspend the game thread
-");
+        std::fprintf(stderr, "hang: cannot suspend the game thread\n");
         return;
     }
     arm_thread_state64_t   state{};
