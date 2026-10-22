@@ -66,22 +66,39 @@ std::optional<fs::path> IosDiscImage() {
     return std::nullopt;
 }
 
+// UIKit shows an alert only over a window of the app's scene, and the game's own window does not exist yet: the
+// setup shows its messages over a window of its own, which stays up, black, while the data is extracted.
+SDL_Window *g_setup_window = nullptr;
+
+void IosMessage(SDL_MessageBoxFlags flags, const char *text) {
+    if (g_setup_window == nullptr && SDL_InitSubSystem(SDL_INIT_VIDEO)) {
+        g_setup_window = SDL_CreateWindow("Dark Chronicle", 0, 0, SDL_WINDOW_FULLSCREEN);
+    }
+    SDL_ShowSimpleMessageBox(flags, "Dark Chronicle", text, g_setup_window);
+}
+
+void IosCloseSetupWindow() {
+    if (g_setup_window != nullptr) {
+        SDL_DestroyWindow(g_setup_window);
+        g_setup_window = nullptr;
+        SDL_QuitSubSystem(SDL_INIT_VIDEO);
+    }
+}
+
 // Extracts on a worker thread while the main thread keeps UIKit's run loop turning, so the system does not take
 // the app for hung. False when there is no disc image to extract.
 bool IosSetupData(const fs::path &root) {
     const std::optional<fs::path> image = IosDiscImage();
     if (!image) {
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Dark Chronicle",
-                                 "Copy your Dark Chronicle disc image (.iso) into Files > On My iPhone > Dark Chronicle, "
-                                 "then open the game again.\n\nUnder LiveContainer, copy it into the game's data "
-                                 "folder instead: LiveContainer's own folder, then Data > Application > the game's "
-                                 "folder > Documents.",
-                                 nullptr);
+        IosMessage(SDL_MESSAGEBOX_INFORMATION,
+                   "Copy your Dark Chronicle disc image (.iso) into Files > On My iPhone > Dark Chronicle, then open "
+                   "the game again.\n\nUnder LiveContainer, copy it into the game's data folder instead: "
+                   "LiveContainer's own folder, then Data > Application > the game's folder > Documents.");
         return false;
     }
     const std::string notice = "Extracting the game data from " + image->filename().string() +
                                ". This takes several minutes: keep the game open and the screen on.";
-    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Dark Chronicle", notice.c_str(), nullptr);
+    IosMessage(SDL_MESSAGEBOX_INFORMATION, notice.c_str());
     std::atomic<bool> done = false;
     std::string       failure;
     std::thread       worker([&] {
@@ -143,7 +160,9 @@ void FirstRunRequireData(const fs::path &root, bool headless) {
     if (!headless) {
         try {
 #ifdef SDL_PLATFORM_IOS
-            if (IosSetupData(root) && !FirstRunDataMissing(root)) {
+            const bool extracted = IosSetupData(root);
+            IosCloseSetupWindow();
+            if (extracted && !FirstRunDataMissing(root)) {
                 return;
             }
 #else
@@ -156,7 +175,12 @@ void FirstRunRequireData(const fs::path &root, bool headless) {
 #endif
         } catch (const std::exception &error) {
             CT_LOG_ERROR(Main, "Game data setup: {}", error.what());
+#ifdef SDL_PLATFORM_IOS
+            IosMessage(SDL_MESSAGEBOX_ERROR, error.what());
+            IosCloseSetupWindow();
+#else
             SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Dark Chronicle", error.what(), nullptr);
+#endif
         }
     }
     LogFlush();
