@@ -398,11 +398,6 @@ int Run(int argc, const char **argv) {
     renderer.layout = Layout(ConfigGet());
     renderer.prog0_meshes = true;
     renderer.validation = renderer.validation || SettingsEnv("VULKAN_VALIDATION") != nullptr;
-#ifdef SDL_PLATFORM_IOS
-    // A phone's screen is over 1100 pixels tall, which would render every target at three times the PS2's 480 lines;
-    // the effects' overdraw in a fight then makes the GPU the bottleneck. Twice, as a 1080p PC renders, is upscaled.
-    renderer.render_scale = 2.0f;
-#endif
     // DC2_RENDER_SCALE: pixels per PS2 line of the render targets, 0 for the window's height over 480.
     if (const char *setting = SettingsEnv("RENDER_SCALE")) {
         char       *end = nullptr;
