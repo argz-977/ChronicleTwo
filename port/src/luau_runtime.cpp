@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -101,6 +102,8 @@ int                                                       module_cache_ref = LUA
 int                                                       required_ref = LUA_NOREF;
 std::int64_t                                              budget = kDefaultBudget;
 std::int64_t                                              remaining = kDefaultBudget;
+std::uint64_t                                             step_nanoseconds = 0;
+int                                                       step_depth = 0;
 CRunScript                                               *current = nullptr;
 std::unordered_map<std::string, std::unique_ptr<char[]> > interned;
 std::unordered_set<std::string>                           ambiguous_commands;
@@ -1046,6 +1049,20 @@ bool PushProgram(lua_State *lua, const Instance &instance, int no) {
  *
  */
 void Step(CRunScript *script, Instance &instance, lua_State *co, int nargs) {
+    // The time scripts take, for TakeScriptNanoseconds: a program a native command starts from a script counts once.
+    struct StepTimer {
+        std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+
+        StepTimer() { ++step_depth; }
+
+        ~StepTimer() {
+            if (--step_depth == 0) {
+                step_nanoseconds += static_cast<std::uint64_t>(
+                    std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count());
+            }
+        }
+    } const timer;
+
     const CurrentGuard guard(script);
     remaining = budget;
     const int status = lua_resume(co, nullptr, nargs);
@@ -1243,6 +1260,10 @@ void SetScriptsRoot(const std::filesystem::path &root) {
     }
     modules.clear();
     modules_indexed = false;
+}
+
+std::uint64_t TakeScriptNanoseconds() {
+    return std::exchange(step_nanoseconds, 0);
 }
 
 void SetInterruptBudget(std::int64_t interrupts) {
