@@ -365,6 +365,10 @@ int Run(int argc, const char **argv) {
         CrashTestArm(*crash_test, CrashTestWhen::Early);
     }
     FirstRunRequireData(PathsDataRoot(), options.headless);
+#ifdef SDL_PLATFORM_IOS
+    // After the launcher, which the on-screen gamepad would cover.
+    IosTouchOverlayStart();
+#endif
     InitCDFile();
     if (!options.headless) {
         GameSetDataIcon();
@@ -483,7 +487,6 @@ static int IosMain(int argc, char **argv) {
             std::fprintf(stderr, "darkchronicle: env %s=%s\n", key.c_str(), value.c_str());
         }
     }
-    IosTouchOverlayStart();
     return Run(argc, const_cast<const char **>(argv));
 }
 #endif

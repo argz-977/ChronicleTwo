@@ -322,7 +322,7 @@ function(ct_link_game target)
         # The Rust host UI uses Windows input, theme, OpenGL and desktop-composition APIs.
         target_link_libraries(${target} PRIVATE imm32 uxtheme opengl32 dwmapi)
     elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS")
-        target_link_libraries(${target} PRIVATE "-framework UIKit" "-framework Metal" "-framework QuartzCore" "-framework CoreMotion" "-framework CoreGraphics" "-framework IOSurface" "-framework Foundation" "-framework GameController" "-framework CoreHaptics")
+        target_link_libraries(${target} PRIVATE "-framework UIKit" "-framework Metal" "-framework QuartzCore" "-framework CoreMotion" "-framework CoreGraphics" "-framework IOSurface" "-framework Foundation" "-framework GameController" "-framework CoreHaptics" "-framework UniformTypeIdentifiers")
     endif()
 endfunction()
 
@@ -338,10 +338,11 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
         MACOSX_BUNDLE_BUNDLE_NAME "Dark Chronicle"
         MACOSX_BUNDLE_SHORT_VERSION_STRING 0.1
         MACOSX_BUNDLE_BUNDLE_VERSION 1)
-    # The on-screen gamepad is a UIKit view and the DualSense haptics use Core Haptics, so Objective-C++,
-    # built apart from the game's forced includes.
+    # The launcher and the on-screen gamepad are UIKit views and the DualSense haptics use Core Haptics, so
+    # Objective-C++, built apart from the game's forced includes.
     enable_language(OBJCXX)
-    add_library(ct_ios_touch OBJECT ${PORT_DIR}/platform/ios_touch_overlay.mm ${PORT_DIR}/platform/ios_haptics.mm)
+    add_library(ct_ios_touch OBJECT ${PORT_DIR}/platform/ios_touch_overlay.mm ${PORT_DIR}/platform/ios_haptics.mm
+        ${PORT_DIR}/platform/ios_launcher.mm)
     set_target_properties(ct_ios_touch PROPERTIES OBJCXX_STANDARD 20 OBJCXX_STANDARD_REQUIRED ON)
     target_include_directories(ct_ios_touch PRIVATE ${KZ_ROOT}/include ${PORT_DIR})
     target_compile_options(ct_ios_touch PRIVATE -fobjc-arc -Wall)
