@@ -255,7 +255,7 @@ if(PORT_BRIDGE_SOURCES)
 endif()
 
 find_path(CT_STB_IMAGE_INCLUDE_DIR stb_image.h
-    PATHS ${KZ_PORT_VENDOR_DIRS} ${CMAKE_BINARY_DIR}/kz_port/vendor NO_DEFAULT_PATH REQUIRED)
+    PATHS ${KZ_PORT_VENDOR_DIRS} ${CMAKE_BINARY_DIR}/kz_port/vendor NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH REQUIRED)
 if(NOT WIN32)
     find_package(Iconv REQUIRED)
 endif()
@@ -329,6 +329,13 @@ endfunction()
 add_executable(darkchronicle ${PORT_DIR}/main.cpp)
 set_target_properties(darkchronicle PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 ct_link_game(darkchronicle)
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    # iOS runs only applications: the executable goes inside darkchronicle.app with a generated Info.plist.
+    set_target_properties(darkchronicle PROPERTIES
+        MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_GUI_IDENTIFIER org.chronicletwo.darkchronicle
+        MACOSX_BUNDLE_BUNDLE_NAME "Dark Chronicle")
+endif()
 if(WIN32)
     target_link_options(darkchronicle PRIVATE -municode)
     enable_language(RC)
