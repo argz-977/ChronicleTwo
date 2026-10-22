@@ -3,6 +3,10 @@
 #include "luacodegen.h"
 #include "lualib.h"
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -910,7 +914,13 @@ lua_State *EnsureState() {
     lua_pop(state, 1);
 
     luaL_sandbox(state);
+    // iOS lets an app make no executable memory without a JIT entitlement a sideloaded app does not get, so the
+    // scripts stay interpreted there.
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+    codegen = false;
+#else
     codegen = luau_codegen_supported() != 0;
+#endif
     if (codegen) {
         luau_codegen_create(state);
     }
