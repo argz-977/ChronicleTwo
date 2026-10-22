@@ -333,8 +333,11 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     # iOS runs only applications: the executable goes inside darkchronicle.app with a generated Info.plist.
     set_target_properties(darkchronicle PROPERTIES
         MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/assets/ios/Info.plist.in
         MACOSX_BUNDLE_GUI_IDENTIFIER org.chronicletwo.darkchronicle
-        MACOSX_BUNDLE_BUNDLE_NAME "Dark Chronicle")
+        MACOSX_BUNDLE_BUNDLE_NAME "Dark Chronicle"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING 0.1
+        MACOSX_BUNDLE_BUNDLE_VERSION 1)
 endif()
 if(WIN32)
     target_link_options(darkchronicle PRIVATE -municode)

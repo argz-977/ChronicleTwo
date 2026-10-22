@@ -12,6 +12,17 @@
 #include <string_view>
 #include <system_error>
 
+#ifdef SDL_PLATFORM_IOS
+#include <CoreFoundation/CoreFoundation.h>
+
+#include <algorithm>
+#include <atomic>
+#include <cctype>
+#include <optional>
+#include <stdexcept>
+#include <thread>
+#endif
+
 #include "exitcodes.hpp"
 #include "kazarov/data_version.hpp"
 #include "log/log.hpp"
@@ -30,6 +41,61 @@ std::string FlatpakHint(const std::string &where) {
     return "\nInside the Flatpak, from a shell: flatpak run --filesystem=<folder of the image>:ro --command=dc2data " +
            std::string(id) + " extract <disc image> " + where + "\n";
 }
+
+#ifdef SDL_PLATFORM_IOS
+// iOS has no setup window or file dialog: the disc image is copied into the app's Documents folder with the Files
+// app, which is the home directory's Documents.
+std::optional<fs::path> IosDiscImage() {
+    const char *home = std::getenv("HOME");
+    if (home == nullptr) {
+        return std::nullopt;
+    }
+    std::error_code error;
+    for (const fs::directory_entry &entry : fs::directory_iterator(fs::path(home) / "Documents", error)) {
+        std::string extension = entry.path().extension().string();
+        std::ranges::transform(extension, extension.begin(), [](unsigned char c) { return std::tolower(c); });
+        if (extension == ".iso" && entry.is_regular_file(error)) {
+            return entry.path();
+        }
+    }
+    return std::nullopt;
+}
+
+// Extracts on a worker thread while the main thread keeps UIKit's run loop turning, so the system does not take
+// the app for hung. False when there is no disc image to extract.
+bool IosSetupData(const fs::path &root) {
+    const std::optional<fs::path> image = IosDiscImage();
+    if (!image) {
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Dark Chronicle",
+                                 "Copy your Dark Chronicle disc image (.iso) into Files > On My iPhone > Dark Chronicle, "
+                                 "then open the game again.",
+                                 nullptr);
+        return false;
+    }
+    const std::string notice = "Extracting the game data from " + image->filename().string() +
+                               ". This takes several minutes: keep the game open and the screen on.";
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Dark Chronicle", notice.c_str(), nullptr);
+    std::atomic<bool> done = false;
+    std::string       failure;
+    std::thread       worker([&] {
+        try {
+            const unsigned jobs = std::clamp(std::thread::hardware_concurrency(), 1u, 4u);
+            kazarov::extract(image->string(), root.string(), jobs);
+        } catch (const std::exception &error) {
+            failure = error.what();
+        }
+        done = true;
+    });
+    while (!done) {
+        CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.05, true);
+    }
+    worker.join();
+    if (!failure.empty()) {
+        throw std::runtime_error(failure);
+    }
+    return true;
+}
+#endif
 
 } // namespace
 
@@ -69,12 +135,18 @@ void FirstRunRequireData(const fs::path &root, bool headless) {
     CT_LOG_ERROR(Main, "{}", std::string_view(text).substr(0, text.ends_with('\n') ? text.size() - 1 : text.size()));
     if (!headless) {
         try {
+#ifdef SDL_PLATFORM_IOS
+            if (IosSetupData(root) && !FirstRunDataMissing(root)) {
+                return;
+            }
+#else
             const auto path = root.u8string();
             if (kazarov::setup_data("Dark Chronicle — Game data", std::string(
                                                                       reinterpret_cast<const char *>(path.data()), path.size())) &&
                 !FirstRunDataMissing(root)) {
                 return;
             }
+#endif
         } catch (const std::exception &error) {
             CT_LOG_ERROR(Main, "Game data setup: {}", error.what());
             SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Dark Chronicle", error.what(), nullptr);

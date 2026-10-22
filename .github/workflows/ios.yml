@@ -21,12 +21,13 @@ jobs:
         with:
           submodules: true
 
+      # FFmpeg's libraries are cross-compiled with Kazarov's pinned LGPL configuration.
       - name: Install the toolchain and libraries
         run: |
           brew install cmake ninja glslang
           rustup toolchain install stable --profile minimal
           rustup target add aarch64-apple-ios
-          cargo install cxxbridge-cmd --version 1.0.205 --locked
+          tools/ci/prebuilt-deps.sh ios-arm64
 
       # SDL3 is required by kazarov and is not shipped as an iOS framework by Homebrew,
       # so cross-compile it for iOS arm64 into a local prefix the CMake configure can find.
@@ -41,6 +42,7 @@ jobs:
             -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
             -DCMAKE_C_COMPILER=clang \
             -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/sdl-ios" \
             -DSDL_STATIC=ON \
             -DSDL_SHARED=OFF \
@@ -64,11 +66,29 @@ jobs:
 
       - name: Configure for iOS
         run: |
-          cmake --preset ios-arm64 \
+          cmake --preset ios-arm64-release \
             -DSDL3_DIR="$SDL3_PREFIX/lib/cmake/SDL3" \
             -DVulkan_INCLUDE_DIR="$VULKAN_INCLUDE_DIR" \
             -DVulkan_LIBRARY="$MOLTENVK_LIBRARY" \
-            -DCT_TEST_TIMEOUT=60
+            -DRust_CARGO_TARGET=aarch64-apple-ios \
+            -DCT_BUILD_TESTS=OFF
 
       - name: Build for iOS
-        run: cmake --build port/build/ios-arm64 -j"$(sysctl -n hw.ncpu)"
+        run: cmake --build port/build/ios-arm64-release --target darkchronicle -j"$(sysctl -n hw.ncpu)"
+
+      # The .ipa is unsigned: a sideloading tool (Sideloadly, AltStore) signs it with the installer's Apple ID.
+      # The button symbols go inside the bundle, which is where the game looks beside its executable.
+      - name: Package the .ipa
+        run: |
+          build=port/build/ios-arm64-release
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R "$build/darkchronicle.app" "$RUNNER_TEMP/ipa/Payload/"
+          cp -R "$build/glyphs" "$RUNNER_TEMP/ipa/Payload/darkchronicle.app/"
+          (cd "$RUNNER_TEMP/ipa" && zip -qry "$GITHUB_WORKSPACE/DarkChronicle.ipa" Payload)
+
+      - name: Upload the .ipa
+        uses: actions/upload-artifact@v7
+        with:
+          name: DarkChronicle-ios-arm64
+          path: DarkChronicle.ipa
+          if-no-files-found: error
