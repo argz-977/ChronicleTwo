@@ -44,18 +44,23 @@ std::string FlatpakHint(const std::string &where) {
 
 #ifdef SDL_PLATFORM_IOS
 // iOS has no setup window or file dialog: the disc image is copied into the app's Documents folder with the Files
-// app, which is the home directory's Documents.
+// app. HOME is the app's container, also under LiveContainer, which points it at the guest app's own data
+// container. A file shared to the app with Open In lands in an Inbox: Documents/Inbox when installed on its own,
+// <home>/Inbox under LiveContainer.
 std::optional<fs::path> IosDiscImage() {
     const char *home = std::getenv("HOME");
     if (home == nullptr) {
         return std::nullopt;
     }
-    std::error_code error;
-    for (const fs::directory_entry &entry : fs::directory_iterator(fs::path(home) / "Documents", error)) {
-        std::string extension = entry.path().extension().string();
-        std::ranges::transform(extension, extension.begin(), [](unsigned char c) { return std::tolower(c); });
-        if (extension == ".iso" && entry.is_regular_file(error)) {
-            return entry.path();
+    for (const fs::path &folder : {fs::path(home) / "Documents", fs::path(home) / "Documents" / "Inbox",
+                                   fs::path(home) / "Inbox"}) {
+        std::error_code error;
+        for (const fs::directory_entry &entry : fs::directory_iterator(folder, error)) {
+            std::string extension = entry.path().extension().string();
+            std::ranges::transform(extension, extension.begin(), [](unsigned char c) { return std::tolower(c); });
+            if (extension == ".iso" && entry.is_regular_file(error)) {
+                return entry.path();
+            }
         }
     }
     return std::nullopt;
@@ -68,7 +73,9 @@ bool IosSetupData(const fs::path &root) {
     if (!image) {
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Dark Chronicle",
                                  "Copy your Dark Chronicle disc image (.iso) into Files > On My iPhone > Dark Chronicle, "
-                                 "then open the game again.",
+                                 "then open the game again.\n\nUnder LiveContainer, copy it into the game's data "
+                                 "folder instead: LiveContainer's own folder, then Data > Application > the game's "
+                                 "folder > Documents.",
                                  nullptr);
         return false;
     }

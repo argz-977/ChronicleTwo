@@ -92,6 +92,13 @@ jobs:
           cp -R "$build/glyphs" "$RUNNER_TEMP/ipa/Payload/darkchronicle.app/"
           mkdir -p "$RUNNER_TEMP/ipa/Payload/darkchronicle.app/assets"
           cp "$build/assets/data.zip" "$RUNNER_TEMP/ipa/Payload/darkchronicle.app/assets/"
+          # The home screen icon, which SideStore and LiveContainer also show.
+          sips -z 120 120 port/assets/icon/chronicletwo-512.png --out "$RUNNER_TEMP/ipa/Payload/darkchronicle.app/AppIcon60x60@2x.png"
+          sips -z 180 180 port/assets/icon/chronicletwo-512.png --out "$RUNNER_TEMP/ipa/Payload/darkchronicle.app/AppIcon60x60@3x.png"
+          # A quick check of what sideloading and LiveContainer need: an arm64, position-independent executable.
+          file "$RUNNER_TEMP/ipa/Payload/darkchronicle.app/darkchronicle"
+          otool -hv "$RUNNER_TEMP/ipa/Payload/darkchronicle.app/darkchronicle" | grep -q PIE
+          otool -l "$RUNNER_TEMP/ipa/Payload/darkchronicle.app/darkchronicle" | grep -A4 LC_BUILD_VERSION
           (cd "$RUNNER_TEMP/ipa" && zip -qry "$GITHUB_WORKSPACE/DarkChronicle.ipa" Payload)
 
       - name: Upload the .ipa
