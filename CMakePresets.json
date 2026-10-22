@@ -98,9 +98,9 @@
                 "CMAKE_OSX_ARCHITECTURES": "arm64",
                 "CMAKE_OSX_SYSROOT": "iphoneos",
                 "CMAKE_MACOSX_BUNDLE": "OFF",
-                "CMAKE_OSX_DEPLOYMENT_TARGET": "15.0",
+                "CMAKE_OSX_DEPLOYMENT_TARGET": "18.0",
                 "CMAKE_XCODE_ATTRIBUTE_ONLY_ACTIVE_ARCH": "NO",
-                "CMAKE_CXX_FLAGS": "-D_LIBCPP_DISABLE_AVAILABILITY -D_LIBCPP_REMOVE_TRANSITIVE_INCLUDES"
+                "CMAKE_CXX_FLAGS": "-D_LIBCPP_REMOVE_TRANSITIVE_INCLUDES"
             }
         },
         {

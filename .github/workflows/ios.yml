@@ -39,7 +39,7 @@ jobs:
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_OSX_SYSROOT=iphoneos \
-            -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=18.0 \
             -DCMAKE_C_COMPILER=clang \
             -DCMAKE_CXX_COMPILER=clang++ \
             -DCMAKE_BUILD_TYPE=Release \
@@ -77,7 +77,7 @@ jobs:
         # Cargo's C builds (zstd, cxx, the movie muxer) otherwise target the SDK's own iOS version, not the app's.
         # Only here: FFmpeg's configure would build its host tools for iOS too and could not run them.
         env:
-          IPHONEOS_DEPLOYMENT_TARGET: "15.0"
+          IPHONEOS_DEPLOYMENT_TARGET: "18.0"
         # -k 0 reports every unit that fails, not only the first.
         run: cmake --build port/build/ios-arm64-release --target darkchronicle -j"$(sysctl -n hw.ncpu)" -- -k 0
 
