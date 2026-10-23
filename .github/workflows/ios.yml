@@ -107,9 +107,10 @@ jobs:
           file "$RUNNER_TEMP/ipa/Payload/darkchronicle.app/darkchronicle"
           otool -hv "$RUNNER_TEMP/ipa/Payload/darkchronicle.app/darkchronicle" | grep -q PIE
           otool -l "$RUNNER_TEMP/ipa/Payload/darkchronicle.app/darkchronicle" | grep -A4 LC_BUILD_VERSION
-          # libc++ symbols newer than the minimum iOS kill the app in dyld before main; std::pmr (iOS 17) slipped in once.
-          if nm -u "$RUNNER_TEMP/ipa/Payload/darkchronicle.app/darkchronicle" | grep '__ZNSt3__13pmr'; then
-            echo "the executable imports std::pmr, which iOS 16 lacks" >&2
+          # libc++ symbols newer than the minimum iOS kill the app in dyld before main. std::pmr (iOS 17) slipped in
+          # once, and iOS 16.3.1 has no floating-point std::to_chars although the headers say 16.3.
+          if nm -u "$RUNNER_TEMP/ipa/Payload/darkchronicle.app/darkchronicle" | grep -E '__ZNSt3__1(3pmr|8to_chars)'; then
+            echo "the executable imports libc++ symbols that iOS 16 lacks" >&2
             exit 1
           fi
           (cd "$RUNNER_TEMP/ipa" && zip -qry "$GITHUB_WORKSPACE/DarkChronicle.ipa" Payload)
