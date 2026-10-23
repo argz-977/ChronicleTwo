@@ -18,6 +18,26 @@ class UnitFixups(unittest.TestCase):
         self.assertNotIn("static CDC2Mes *DownLoadMes[6];", mirrored)
         self.assertGreaterEqual(mirrored.count("i < 8;"), 2)
 
+    def test_train_fight_times_the_bomb_in_retail_frames(self):
+        source = (Path(__file__).resolve().parents[2] / "ps2/src/pbuggy.cpp").read_text(encoding="latin-1")
+        for check in ("frame_now <= 15.0f", "frame_now <= 44.0f", "frame_now <= 18.0f", "frame_now <= 30.9f"):
+            self.assertEqual(source.count(check), 1)
+        result = header_fixups.fixup_unit_text("pbuggy.cpp", source)
+        self.assertEqual(result.count("frame_now = PortBuggyRetailFrame(player);"), 1)
+        self.assertEqual(result.count("float     frame_now = PortBuggyRetailFrame(StarbullChara);"), 1)
+        self.assertNotIn("GetNowFrame()", result)
+        self.assertEqual(result.count("\n"), source.count("\n"))
+
+    def test_trash_message_reset_stays_inside_its_slots(self):
+        source = (Path(__file__).resolve().parents[2] / "ps2/src/menusys.cpp").read_text(encoding="latin-1")
+        reset = "for (int i = 0; i < 8; i++) {\n                            TrushMesCls[i] = NULL;"
+        self.assertEqual(source.count(reset), 1)
+        mirrored = header_fixups.fixup_unit_text("menusys.cpp", source)
+        self.assertEqual(mirrored.count("static CDC2Mes *TrushMesCls[4];"), 1)
+        self.assertEqual(mirrored.count("for (auto &message : TrushMesCls) {\n                            message = nullptr;"), 1)
+        self.assertNotIn(reset, mirrored)
+        self.assertEqual(mirrored.count("\n"), source.count("\n"))
+
     def test_geostone_conditions_fit_their_text_and_wrap_buffers(self):
         source = (Path(__file__).resolve().parents[2] / "ps2/src/editmenu.cpp").read_text()
         mirrored = header_fixups.fixup_unit_text("editmenu.cpp", source)

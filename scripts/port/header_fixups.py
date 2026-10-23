@@ -251,6 +251,18 @@ UNIT_FIXUPS = [
     ("monster.cpp", "target_no == i + MONSTER_ACTIVE_MAX)", "target_no == DNG_CHARA_SLOT_MONSTER + i)"),
     # Geostone announcement updates and draws reserve eight nullable message slots.
     ("editmenu.cpp", "static CDC2Mes *DownLoadMes[6];", "static CDC2Mes *DownLoadMes[8];"),
+    # The train fight takes, throws and reloads the bomb at retail frames of its motions, which native motion sets
+    # no longer start where retail's did.
+    ("pbuggy.cpp", "            frame_now = player->GetNowFrame();", "            frame_now = PortBuggyRetailFrame(player);"),
+    ("pbuggy.cpp", "        float     frame_now = StarbullChara->GetNowFrame();",
+     "        float     frame_now = PortBuggyRetailFrame(StarbullChara);"),
+    # The overflow notice resets only the message slots in its array, preserving adjacent dungeon state.
+    ("menusys.cpp", """                        for (int i = 0; i < 8; i++) {
+                            TrushMesCls[i] = NULL;
+                        }""",
+     """                        for (auto &message : TrushMesCls) {
+                            message = nullptr;
+                        }"""),
     # A Georama list that fits on one page has no scroll range: the EE FPU's 0/0 is finite, IEEE's is NaN.
     ("editmenu.cpp", "            float rate = space / (num - GEORAMA_LIST_LINE_NUM);",
      "            float rate = num > GEORAMA_LIST_LINE_NUM ? space / (num - GEORAMA_LIST_LINE_NUM) : 0.0f;"),
