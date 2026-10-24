@@ -67,12 +67,18 @@ jobs:
 
       - name: Configure for iOS
         run: |
+          set +e
           cmake --preset ios-arm64-release \
             -DSDL3_DIR="$SDL3_PREFIX/lib/cmake/SDL3" \
             -DVulkan_INCLUDE_DIR="$VULKAN_INCLUDE_DIR" \
             -DVulkan_LIBRARY="$MOLTENVK_LIBRARY" \
             -DRust_CARGO_TARGET=aarch64-apple-ios \
-            -DCT_BUILD_TESTS=OFF
+            -DCT_BUILD_TESTS=OFF 2>&1 | tee "$RUNNER_TEMP/configure.log"
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            grep -E "Error|error" -A3 "$RUNNER_TEMP/configure.log" | head -60 | while IFS= read -r line; do echo "::error::$line"; done
+          fi
+          exit "$status"
 
       - name: Build for iOS
         # Cargo's C builds (zstd, cxx, the movie muxer) otherwise target the SDK's own iOS version, not the app's.
@@ -80,7 +86,14 @@ jobs:
         env:
           IPHONEOS_DEPLOYMENT_TARGET: "16.0"
         # -k 0 reports every unit that fails, not only the first.
-        run: cmake --build port/build/ios-arm64-release --target darkchronicle -j"$(sysctl -n hw.ncpu)" -- -k 0
+        run: |
+          set +e
+          cmake --build port/build/ios-arm64-release --target darkchronicle -j"$(sysctl -n hw.ncpu)" -- -k 0 2>&1 | tee "$RUNNER_TEMP/build.log"
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            grep -E "error:|Error |undefined|ld:" "$RUNNER_TEMP/build.log" | head -60 | while IFS= read -r line; do echo "::error::$line"; done
+          fi
+          exit "$status"
 
       # The .ipa is unsigned: a sideloading tool (Sideloadly, AltStore) signs it with the installer's Apple ID.
       # The button symbols and the gameplay seed (assets/data.zip) go inside the bundle, which is where the game
