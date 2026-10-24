@@ -38,7 +38,7 @@
 #include "platform/input_script.hpp"
 #include "platform/input_startup.hpp"
 #ifdef SDL_PLATFORM_IOS
-#include "platform/ios_touch_overlay.hpp"
+#include "ios/ios.hpp"
 #endif
 #include "platform/paths.hpp"
 #include "platform/settings.hpp"
