@@ -20,7 +20,7 @@
 #include "sceneseq.hpp"
 #include "scenesnd.hpp"
 #ifdef SDL_PLATFORM_IOS
-#include "platform/ios_haptics.hpp"
+#include "ios/ios.hpp"
 #endif
 
 namespace {
